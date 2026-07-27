@@ -1,0 +1,121 @@
+package {{.Package}}
+
+{{- if or .Logger .Tracer}}
+import (
+	"context"
+{{- if .Logger}}
+	"log/slog"
+{{- end}}
+{{- if .Tracer}}
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+{{- end}}
+)
+{{- else}}
+import "context"
+{{- end}}
+
+type ErrNil{{.Name.Pascal}}Client struct{}
+
+func (e *ErrNil{{.Name.Pascal}}Client) Error() string {
+	return "error nil client in {{.Name.Pascal}}Adapter"
+}
+
+type {{.Name.Pascal}}Client interface {
+	Close() error
+}
+
+type {{.Name.Pascal}}Opt func(a *{{.Name.Pascal}}Adapter) error
+
+// With{{.Name.Pascal}}Client sets the adapter's client
+func With{{.Name.Pascal}}Client(client {{.Name.Pascal}}Client) {{.Name.Pascal}}Opt {
+	return func(a *{{.Name.Pascal}}Adapter) error {
+		a.client = client
+
+		return nil
+	}
+}
+{{- if .Tracer}}
+
+// With{{.Name.Pascal}}SpanAttrs adds attributes to the adapter's spans
+func With{{.Name.Pascal}}SpanAttrs(attrs ...attribute.KeyValue) {{.Name.Pascal}}Opt {
+	return func(a *{{.Name.Pascal}}Adapter) error {
+		a.attributes = append(a.attributes, attrs...)
+
+		return nil
+	}
+}
+{{- end}}
+
+type {{.Name.Pascal}}Adapter struct {
+	client {{.Name.Pascal}}Client
+{{- if .Logger}}
+	logger *slog.Logger
+{{- end}}
+{{- if .Tracer}}
+	tracer     trace.Tracer
+	attributes []attribute.KeyValue
+{{- end}}
+}
+
+// New{{.Name.Pascal}}Adapter creates a new {{.Name.Pascal}}Adapter
+func New{{.Name.Pascal}}Adapter({{if .Logger}}logger *slog.Logger, {{end}}{{if .Tracer}}tracer trace.Tracer, {{end}}opts ...{{.Name.Pascal}}Opt) (*{{.Name.Pascal}}Adapter, error) {
+{{- if or .Logger .Tracer}}
+	adapter := &{{.Name.Pascal}}Adapter{
+{{- if .Logger}}
+		logger: logger,
+{{- end}}
+{{- if .Tracer}}
+		tracer: tracer,
+{{- end}}
+	}
+{{- else}}
+	adapter := &{{.Name.Pascal}}Adapter{}
+{{- end}}
+
+	for _, opt := range opts {
+		if err := opt(adapter); err != nil {
+			return nil, err
+		}
+	}
+
+	return adapter, nil
+}
+
+// Do is an example of the adapter's {{if .Tracer}}traced {{end}}operations. Replace it with the
+// methods this adapter actually exposes
+func (a *{{.Name.Pascal}}Adapter) Do(ctx context.Context) error {
+	if a.client == nil {
+{{- if .Logger}}
+		a.logger.Error("nil client in {{.Name.Pascal}}Adapter")
+{{end}}
+		return &ErrNil{{.Name.Pascal}}Client{}
+	}
+{{- if .Tracer}}
+
+	_, span := a.tracer.Start(ctx, "{{.Name.Lower}} do",
+		trace.WithLinks(trace.LinkFromContext(ctx)),
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("{{.Name.Snake}}.operation.name", "do"),
+		),
+	)
+	defer span.End()
+
+	if a.attributes != nil {
+		span.SetAttributes(a.attributes...)
+	}
+{{- end}}
+
+	return nil
+}
+
+// Close closes the underlying client
+func (a *{{.Name.Pascal}}Adapter) Close() error {
+	if a.client == nil {
+		return nil
+	}
+
+	return a.client.Close()
+}

@@ -1,0 +1,4 @@
+// internal/core/entity/order.go
+package entity
+
+type Order struct{}

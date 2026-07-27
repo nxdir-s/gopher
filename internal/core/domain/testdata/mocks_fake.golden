@@ -1,0 +1,53 @@
+// internal/adapters/fake/order_repository.go
+package fake
+
+import (
+	"context"
+)
+
+// FakeOrderRepository is a hand written fake for the OrderRepository port. Set the
+// fields for the methods a test exercises and leave the rest nil
+type FakeOrderRepository struct {
+	SaveFunc   func(ctx context.Context, order *entity.Order) error
+	FindFunc   func(ctx context.Context, id int) (*entity.Order, error)
+	CloseFunc  func()
+	saveCalls  int
+	findCalls  int
+	closeCalls int
+}
+
+// Save records the call and delegates to SaveFunc
+func (f *FakeOrderRepository) Save(ctx context.Context, order *entity.Order) error {
+	f.saveCalls++
+
+	return f.SaveFunc(ctx, order)
+}
+
+// Find records the call and delegates to FindFunc
+func (f *FakeOrderRepository) Find(ctx context.Context, id int) (*entity.Order, error) {
+	f.findCalls++
+
+	return f.FindFunc(ctx, id)
+}
+
+// Close records the call and delegates to CloseFunc
+func (f *FakeOrderRepository) Close() {
+	f.closeCalls++
+
+	f.CloseFunc()
+}
+
+// SaveCallCount returns how many times Save was called
+func (f *FakeOrderRepository) SaveCallCount() int {
+	return f.saveCalls
+}
+
+// FindCallCount returns how many times Find was called
+func (f *FakeOrderRepository) FindCallCount() int {
+	return f.findCalls
+}
+
+// CloseCallCount returns how many times Close was called
+func (f *FakeOrderRepository) CloseCallCount() int {
+	return f.closeCalls
+}

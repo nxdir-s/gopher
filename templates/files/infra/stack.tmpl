@@ -1,0 +1,32 @@
+package main
+
+import (
+	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/constructs-go/constructs/v10"
+	"github.com/aws/jsii-runtime-go"
+)
+
+type {{.Name.Pascal}}StackProps struct {
+	awscdk.StackProps
+}
+
+// New{{.Name.Pascal}}Stack declares the resources the {{.Name.Words}} stack owns
+func New{{.Name.Pascal}}Stack(scope constructs.Construct, id string, props *{{.Name.Pascal}}StackProps) awscdk.Stack {
+	var stackProps awscdk.StackProps
+	if props != nil {
+		stackProps = props.StackProps
+	}
+
+	stack := awscdk.NewStack(scope, jsii.String(id), &stackProps)
+
+	// TODO: declare the resources this stack owns, for example
+	//
+	//	awss3.NewBucket(stack, jsii.String("{{.Name.Pascal}}Bucket"), &awss3.BucketProps{
+	//		BucketName:        jsii.String("{{.Name.Kebab}}"),
+	//		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+	//		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+	//		RemovalPolicy:     awscdk.RemovalPolicy_RETAIN,
+	//	})
+
+	return stack
+}

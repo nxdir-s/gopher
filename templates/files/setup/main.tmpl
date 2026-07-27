@@ -1,0 +1,54 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"{{.Module}}/internal/config"
+	"{{.Module}}/internal/logs"
+)
+
+const (
+	ExitOk    int = 0
+	ExitError int = 1
+)
+
+// Version is set at build time with -ldflags
+var Version string = "dev"
+
+func main() {
+	os.Exit(run())
+}
+
+// run wires the dependencies and starts the application, returning the exit code
+func run() int {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load config: %s\n", err.Error())
+
+		return ExitError
+	}
+
+	logger := logs.NewLogger(os.Stdout, cfg.LogLevel)
+
+	logger.Info("starting {{.Name.Kebab}}",
+		slog.String("version", Version),
+		slog.String("env", cfg.Env),
+	)
+
+	// TODO: create the adapters, wire them into the core, and start the
+	// primary adapter that drives the application
+
+	<-ctx.Done()
+
+	logger.Info("shutdown complete")
+
+	return ExitOk
+}

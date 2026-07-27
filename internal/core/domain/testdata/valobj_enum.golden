@@ -1,0 +1,55 @@
+// internal/core/valobj/status.go
+package valobj
+
+import "strings"
+
+type ErrUnknownStatus struct {
+	name string
+}
+
+func (e *ErrUnknownStatus) Error() string {
+	return "unknown status: " + e.name
+}
+
+type Status int
+
+const (
+	StatusUnknown Status = iota
+	StatusPending
+	StatusInTransit
+	StatusDelivered
+)
+
+var statusNames = map[Status]string{
+	StatusPending:   "pending",
+	StatusInTransit: "in_transit",
+	StatusDelivered: "delivered",
+}
+
+// String returns the canonical name of the status
+func (v Status) String() string {
+	name, ok := statusNames[v]
+	if !ok {
+		return "unknown"
+	}
+
+	return name
+}
+
+// MarshalJSON encodes the status as its canonical name
+func (v Status) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + v.String() + `"`), nil
+}
+
+// ParseStatus resolves a name to its Status
+func ParseStatus(name string) (Status, error) {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+
+	for value, valueName := range statusNames {
+		if valueName == normalized {
+			return value, nil
+		}
+	}
+
+	return StatusUnknown, &ErrUnknownStatus{name}
+}

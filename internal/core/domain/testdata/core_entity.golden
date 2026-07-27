@@ -1,0 +1,12 @@
+// internal/core/entity/order.go
+package entity
+
+import (
+	"time"
+)
+
+type Order struct {
+	ID       int       `json:"id"`
+	Total    float64   `json:"total"`
+	PlacedAt time.Time `json:"placed_at"`
+}

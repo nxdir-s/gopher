@@ -1,0 +1,134 @@
+// Package {{.Name.Lower}} wires up opentelemetry tracing
+package {{.Name.Lower}}
+
+import (
+	"context"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/trace"
+)
+
+const (
+	DefaultShutdownTimeout time.Duration = 5 * time.Second
+)
+
+type ErrCreateExporter struct {
+	err error
+}
+
+func (e *ErrCreateExporter) Error() string {
+	return "failed to create trace exporter: " + e.err.Error()
+}
+
+type ErrCreateResource struct {
+	err error
+}
+
+func (e *ErrCreateResource) Error() string {
+	return "failed to create otel resource: " + e.err.Error()
+}
+
+type {{.Name.Pascal}}Opt func(o *{{.Name.Pascal}}) error
+
+// With{{.Name.Pascal}}Endpoint sets the otlp collector endpoint
+func With{{.Name.Pascal}}Endpoint(endpoint string) {{.Name.Pascal}}Opt {
+	return func(o *{{.Name.Pascal}}) error {
+		o.endpoint = endpoint
+
+		return nil
+	}
+}
+
+// With{{.Name.Pascal}}Insecure disables transport security, for local collectors
+func With{{.Name.Pascal}}Insecure() {{.Name.Pascal}}Opt {
+	return func(o *{{.Name.Pascal}}) error {
+		o.insecure = true
+
+		return nil
+	}
+}
+
+type {{.Name.Pascal}} struct {
+	provider *sdktrace.TracerProvider
+	service  string
+	version  string
+	endpoint string
+	insecure bool
+}
+
+// New{{.Name.Pascal}} configures the global tracer provider and propagator
+func New{{.Name.Pascal}}(ctx context.Context, service string, version string, opts ...{{.Name.Pascal}}Opt) (*{{.Name.Pascal}}, error) {
+	observability := &{{.Name.Pascal}}{
+		service: service,
+		version: version,
+	}
+
+	for _, opt := range opts {
+		if err := opt(observability); err != nil {
+			return nil, err
+		}
+	}
+
+	options := []otlptracegrpc.Option{}
+
+	if len(observability.endpoint) > 0 {
+		options = append(options, otlptracegrpc.WithEndpoint(observability.endpoint))
+	}
+
+	if observability.insecure {
+		options = append(options, otlptracegrpc.WithInsecure())
+	}
+
+	exporter, err := otlptracegrpc.New(ctx, options...)
+	if err != nil {
+		return nil, &ErrCreateExporter{err}
+	}
+
+	attrs, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName(service),
+			semconv.ServiceVersion(version),
+		),
+	)
+	if err != nil {
+		return nil, &ErrCreateResource{err}
+	}
+
+	observability.provider = sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(attrs),
+	)
+
+	otel.SetTracerProvider(observability.provider)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	return observability, nil
+}
+
+// Tracer returns a named tracer from the configured provider
+func (o *{{.Name.Pascal}}) Tracer(name string) trace.Tracer {
+	return o.provider.Tracer(name)
+}
+
+// Shutdown flushes any pending spans
+func (o *{{.Name.Pascal}}) Shutdown(ctx context.Context) error {
+	if o.provider == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, DefaultShutdownTimeout)
+	defer cancel()
+
+	return o.provider.Shutdown(ctx)
+}

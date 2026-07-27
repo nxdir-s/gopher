@@ -1,0 +1,57 @@
+package entity
+
+import "{{.Module}}/internal/core/valobj"
+
+// Request is an outbound http request, shaped so it can be built up and edited
+// before being sent. The adapter fills in ContentType while encoding the body
+type Request struct {
+	Method      valobj.Method    `json:"method"`
+	URL         string           `json:"url"`
+	Headers     []valobj.Header  `json:"headers,omitempty"`
+	FormFields  []valobj.FormField `json:"form_fields,omitempty"`
+	Body        string           `json:"body,omitempty"`
+	BodyType    valobj.BodyType  `json:"body_type"`
+	ContentType string           `json:"content_type,omitempty"`
+}
+
+// NewRequest creates a request for the supplied method and url
+func NewRequest(method valobj.Method, url string) *Request {
+	return &Request{
+		Method:     method,
+		URL:        url,
+		Headers:    make([]valobj.Header, 0),
+		FormFields: make([]valobj.FormField, 0),
+	}
+}
+
+// AddHeader appends an enabled header
+func (r *Request) AddHeader(key string, value string) {
+	r.Headers = append(r.Headers, valobj.Header{
+		Key:     key,
+		Value:   value,
+		Enabled: true,
+	})
+}
+
+// AddFormField appends an enabled form field. Prefix the value with '@' to
+// attach the file at that path
+func (r *Request) AddFormField(key string, value string) {
+	r.FormFields = append(r.FormFields, valobj.FormField{
+		Key:     key,
+		Value:   value,
+		Enabled: true,
+	})
+}
+
+// Header returns the value of the first enabled header with the supplied key
+func (r *Request) Header(key string) (string, bool) {
+	for i := range r.Headers {
+		if !r.Headers[i].Enabled || r.Headers[i].Key != key {
+			continue
+		}
+
+		return r.Headers[i].Value, true
+	}
+
+	return "", false
+}

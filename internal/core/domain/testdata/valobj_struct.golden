@@ -1,0 +1,9 @@
+// internal/core/valobj/header.go
+package valobj
+
+// Header is an immutable value shared across the core
+type Header struct {
+	Key     string
+	Value   string
+	Enabled bool
+}

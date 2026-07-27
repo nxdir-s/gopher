@@ -1,0 +1,73 @@
+// internal/core/domain/orders.go
+package domain
+
+import (
+	"log/slog"
+
+	"github.com/nxdir-s/demo/internal/ports"
+)
+
+type ErrNilOrdersDependency struct {
+	name string
+}
+
+func (e *ErrNilOrdersDependency) Error() string {
+	return "error nil " + e.name + " in Orders"
+}
+
+type OrdersOpt func(d *Orders) error
+
+// WithRepo sets the repo the domain drives
+func WithRepo(repo ports.OrderRepository) OrdersOpt {
+	return func(d *Orders) error {
+		d.repo = repo
+
+		return nil
+	}
+}
+
+// WithEvents sets the events the domain drives
+func WithEvents(events ports.EventPublisher) OrdersOpt {
+	return func(d *Orders) error {
+		d.events = events
+
+		return nil
+	}
+}
+
+type Orders struct {
+	repo   ports.OrderRepository
+	events ports.EventPublisher
+	logger *slog.Logger
+}
+
+// NewOrders creates the orders domain
+func NewOrders(logger *slog.Logger, opts ...OrdersOpt) (*Orders, error) {
+	domain := &Orders{
+		logger: logger,
+	}
+
+	for _, opt := range opts {
+		if err := opt(domain); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := domain.validateDeps(); err != nil {
+		return nil, err
+	}
+
+	return domain, nil
+}
+
+// validateDeps checks that every port the domain drives was supplied
+func (d *Orders) validateDeps() error {
+	switch {
+	case d.repo == nil:
+		return &ErrNilOrdersDependency{"Repo"}
+	case d.events == nil:
+		return &ErrNilOrdersDependency{"Events"}
+	default:
+		return nil
+	}
+}

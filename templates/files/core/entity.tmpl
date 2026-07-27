@@ -1,0 +1,21 @@
+package {{.Package}}
+{{- if .Lists.import}}
+
+import (
+{{- range .Lists.import}}
+	"{{.}}"
+{{- end}}
+)
+{{- end}}
+
+{{- if .Fields}}
+
+type {{.Name.Pascal}} struct {
+{{- range .Fields}}
+	{{.Name.Pascal}} {{.Type}}{{if .Tag}} `{{.Tag}}`{{else if eq $.Flags.json "true"}} `json:"{{.Name.Snake}}"`{{end}}
+{{- end}}
+}
+{{- else}}
+
+type {{.Name.Pascal}} struct{}
+{{- end}}

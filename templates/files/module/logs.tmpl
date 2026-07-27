@@ -1,0 +1,32 @@
+// Package {{.Name.Lower}} holds the application logger
+package {{.Name.Lower}}
+
+import (
+	"io"
+	"log/slog"
+	"strings"
+)
+
+var levels = map[string]slog.Level{
+	"debug": slog.LevelDebug,
+	"info":  slog.LevelInfo,
+	"warn":  slog.LevelWarn,
+	"error": slog.LevelError,
+}
+
+// NewLogger creates the logger used across the application
+func NewLogger(w io.Writer, level string) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{
+		Level: ParseLevel(level),
+	}))
+}
+
+// ParseLevel resolves a level name, falling back to info
+func ParseLevel(level string) slog.Level {
+	parsed, ok := levels[strings.ToLower(strings.TrimSpace(level))]
+	if !ok {
+		return slog.LevelInfo
+	}
+
+	return parsed
+}

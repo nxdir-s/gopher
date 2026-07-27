@@ -1,0 +1,263 @@
+// cmd/demo/main.go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/nxdir-s/demo/internal/config"
+	"github.com/nxdir-s/demo/internal/logs"
+)
+
+const (
+	ExitOk    int = 0
+	ExitError int = 1
+)
+
+// Version is set at build time with -ldflags
+var Version string = "dev"
+
+func main() {
+	os.Exit(run())
+}
+
+// run wires the dependencies and starts the application, returning the exit code
+func run() int {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load config: %s\n", err.Error())
+
+		return ExitError
+	}
+
+	logger := logs.NewLogger(os.Stdout, cfg.LogLevel)
+
+	logger.Info("starting demo",
+		slog.String("version", Version),
+		slog.String("env", cfg.Env),
+	)
+
+	// TODO: create the adapters, wire them into the core, and start the
+	// primary adapter that drives the application
+
+	<-ctx.Done()
+
+	logger.Info("shutdown complete")
+
+	return ExitOk
+}
+// internal/logs/logger.go
+package logs
+
+import (
+	"io"
+	"log/slog"
+	"strings"
+)
+
+var levels = map[string]slog.Level{
+	"debug": slog.LevelDebug,
+	"info":  slog.LevelInfo,
+	"warn":  slog.LevelWarn,
+	"error": slog.LevelError,
+}
+
+// NewLogger creates the logger used across the application
+func NewLogger(w io.Writer, level string) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{
+		Level: ParseLevel(level),
+	}))
+}
+
+// ParseLevel resolves a level name, falling back to info
+func ParseLevel(level string) slog.Level {
+	parsed, ok := levels[strings.ToLower(strings.TrimSpace(level))]
+	if !ok {
+		return slog.LevelInfo
+	}
+
+	return parsed
+}
+// internal/config/config.go
+package config
+
+import "os"
+
+const (
+	EnvKey      string = "APP_ENV"
+	LogLevelKey string = "LOG_LEVEL"
+
+	DefaultEnv      string = "local"
+	DefaultLogLevel string = "info"
+)
+
+type ErrMissingEnv struct {
+	key string
+}
+
+func (e *ErrMissingEnv) Error() string {
+	return "missing required environment variable: " + e.key
+}
+
+// Config holds the settings the application reads from the environment
+type Config struct {
+	Env      string
+	LogLevel string
+}
+
+// Load reads the configuration from the environment
+func Load() (*Config, error) {
+	cfg := &Config{
+		Env:      lookup(EnvKey, DefaultEnv),
+		LogLevel: lookup(LogLevelKey, DefaultLogLevel),
+	}
+
+	return cfg, nil
+}
+
+// lookup returns the value of the environment variable or the fallback
+func lookup(key string, fallback string) string {
+	value, ok := os.LookupEnv(key)
+	if !ok || len(value) == 0 {
+		return fallback
+	}
+
+	return value
+}
+
+// require returns the value of the environment variable or an error
+func require(key string) (string, error) {
+	value, ok := os.LookupEnv(key)
+	if !ok || len(value) == 0 {
+		return "", &ErrMissingEnv{key}
+	}
+
+	return value, nil
+}
+// internal/ports/core.go
+// Package ports holds the port definitions that define how the core interacts
+// with internal and external entities
+package ports
+
+// core.go holds the interfaces that define how domains interact with internal
+// and external entities. Add them with 'gopher generate port -side core'
+// internal/ports/primary.go
+package ports
+
+// primary.go holds the interfaces that define how the core allows external
+// entities to interact with it. Add them with 'gopher generate port -side primary'
+// internal/ports/secondary.go
+package ports
+
+// secondary.go holds the interfaces that define how the core drives external
+// entities. Add them with 'gopher generate port -side secondary'
+// internal/adapters/doc.go
+// Package adapters holds the primary and secondary adapters that handle
+// communication between external entities and the core of the application.
+// Adapters are responsible for data transformations, error handling, telemetry,
+// and logging
+package adapters
+// internal/core/domain/doc.go
+// Package domain holds the orchestrators for domain use cases. Domains
+// implement the business rules and validation logic specific to a domain
+package domain
+// internal/core/entity/doc.go
+// Package entity holds the domain object types
+package entity
+// internal/core/valobj/doc.go
+// Package valobj holds the shared immutable data types used across the core
+package valobj
+// Makefile
+BINARY := demo
+CMD    := ./cmd/demo
+
+.PHONY: build run test vet fmt tidy clean
+
+build:
+	go build -o bin/$(BINARY) $(CMD)
+
+run:
+	go run $(CMD)
+
+test:
+	go test ./...
+
+vet:
+	go vet ./...
+
+fmt:
+	gofmt -w .
+
+tidy:
+	go mod tidy
+
+clean:
+	rm -rf bin
+// .gitignore
+bin/
+*.out
+*.test
+.env
+.DS_Store
+// CLAUDE.md
+# Demo
+
+Module: `github.com/nxdir-s/demo`
+
+## Generating code
+
+This project uses [gopher](https://github.com/nxdir-s/gopher) to generate Go
+files from templates. **Prefer `gopher generate` over writing these file types
+by hand** — the templates encode this project's conventions for architecture,
+naming, error handling, and telemetry, so generated code needs less rework.
+
+Discover the interface instead of guessing at flags:
+
+```bash
+gopher list --json              # the available types
+gopher describe adapter --json  # the flags a type accepts
+```
+
+Then generate, read the result, and adjust it with the surrounding context:
+
+```bash
+gopher generate adapter --kind postgres --name Orders
+gopher generate entity --name Order --field 'ID:int' --field 'Total:float64' --json
+gopher generate port --name OrderRepository --method 'Save(ctx context.Context, order *entity.Order) error'
+gopher generate domain --name Orders --port 'repo:ports.OrderRepository'
+```
+
+Useful flags: `--stdout` previews without writing, `--dry-run` prints the paths,
+and existing files are never overwritten without `--force`. The `port` generator
+appends to the shared ports files and is a no-op if the interface already exists.
+
+## Architecture
+
+Hexagonal, with inputs and outputs at the edges. Business logic never depends on
+the transport it is exposed over or on where its data comes from.
+
+- `cmd/` — main packages; wire dependencies and run the application
+- `internal/adapters/` — primary and secondary adapters. Adapters own data
+  transformation, error handling, telemetry, and logging
+- `internal/core/domain/` — orchestrators for domain use cases, holding the
+  business rules and validation for a domain
+- `internal/core/entity/` — the domain object types
+- `internal/core/valobj/` — shared immutable value types
+- `internal/ports/` — the interfaces connecting the core to everything else:
+  `core.go` for domain-to-entity interaction, `primary.go` for how the core is
+  driven, `secondary.go` for what the core drives
+
+## Conventions
+
+- Errors are custom struct types with an `Error() string` method, not
+  `fmt.Errorf`. Wrap the cause: `return &ErrDoThing{err}`
+- Constructors take functional options: `NewXAdapter(logger, tracer, opts ...XOpt)`
+- Guard nil dependencies at the top of a method and return a typed error
+- Leave a blank line before a `return` that follows a statement block

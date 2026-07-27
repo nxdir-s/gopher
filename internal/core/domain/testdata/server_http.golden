@@ -1,0 +1,146 @@
+// internal/adapters/api.go
+package adapters
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"time"
+)
+
+const (
+	DefaultPort            string        = "8080"
+	DefaultReadTimeout     time.Duration = 5 * time.Second
+	DefaultWriteTimeout    time.Duration = 10 * time.Second
+	DefaultIdleTimeout     time.Duration = 120 * time.Second
+	DefaultShutdownTimeout time.Duration = 15 * time.Second
+)
+
+type ErrServe struct {
+	err error
+}
+
+func (e *ErrServe) Error() string {
+	return "http server stopped: " + e.err.Error()
+}
+
+type ErrShutdown struct {
+	err error
+}
+
+func (e *ErrShutdown) Error() string {
+	return "failed to shut down http server: " + e.err.Error()
+}
+
+type APIOpt func(a *APIAdapter) error
+
+// WithAPIPort sets the port the server listens on
+func WithAPIPort(port string) APIOpt {
+	return func(a *APIAdapter) error {
+		a.server.Addr = ":" + port
+
+		return nil
+	}
+}
+
+// WithAPITimeouts overrides the server timeouts
+func WithAPITimeouts(read time.Duration, write time.Duration, idle time.Duration) APIOpt {
+	return func(a *APIAdapter) error {
+		a.server.ReadTimeout = read
+		a.server.WriteTimeout = write
+		a.server.IdleTimeout = idle
+
+		return nil
+	}
+}
+
+// WithAPIShutdownTimeout sets how long in flight requests are given to finish
+func WithAPIShutdownTimeout(timeout time.Duration) APIOpt {
+	return func(a *APIAdapter) error {
+		a.shutdownTimeout = timeout
+
+		return nil
+	}
+}
+
+type APIAdapter struct {
+	server          *http.Server
+	router          *http.ServeMux
+	logger          *slog.Logger
+	shutdownTimeout time.Duration
+}
+
+// NewAPIAdapter creates the primary adapter that serves http traffic
+func NewAPIAdapter(logger *slog.Logger, opts ...APIOpt) (*APIAdapter, error) {
+	router := http.NewServeMux()
+
+	adapter := &APIAdapter{
+		router: router,
+		server: &http.Server{
+			Addr:         ":" + DefaultPort,
+			Handler:      router,
+			ReadTimeout:  DefaultReadTimeout,
+			WriteTimeout: DefaultWriteTimeout,
+			IdleTimeout:  DefaultIdleTimeout,
+		},
+		logger:          logger,
+		shutdownTimeout: DefaultShutdownTimeout,
+	}
+
+	for _, opt := range opts {
+		if err := opt(adapter); err != nil {
+			return nil, err
+		}
+	}
+
+	return adapter, nil
+}
+
+// Handle registers a handler for the supplied pattern
+func (a *APIAdapter) Handle(pattern string, handler http.Handler) {
+	a.router.Handle(pattern, handler)
+}
+
+// HandleFunc registers a handler function for the supplied pattern
+func (a *APIAdapter) HandleFunc(pattern string, handler http.HandlerFunc) {
+	a.router.HandleFunc(pattern, handler)
+}
+
+// Serve starts the server and shuts it down when the context is canceled
+func (a *APIAdapter) Serve(ctx context.Context) error {
+	errs := make(chan error, 1)
+
+	go func() {
+		if err := a.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errs <- &ErrServe{err}
+
+			return
+		}
+
+		errs <- nil
+	}()
+
+	a.logger.Info("http server listening", slog.String("addr", a.server.Addr))
+
+	select {
+	case err := <-errs:
+		return err
+	case <-ctx.Done():
+		return a.Shutdown()
+	}
+}
+
+// Shutdown stops the server, giving in flight requests time to finish
+func (a *APIAdapter) Shutdown() error {
+	ctx, cancel := context.WithTimeout(context.Background(), a.shutdownTimeout)
+	defer cancel()
+
+	a.logger.Info("shutting down http server")
+
+	if err := a.server.Shutdown(ctx); err != nil {
+		return &ErrShutdown{err}
+	}
+
+	return nil
+}

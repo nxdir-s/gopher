@@ -1,0 +1,392 @@
+package {{.Package}}
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+)
+
+type ErrPgxConn struct {
+	err error
+}
+
+func (e *ErrPgxConn) Error() string {
+	return "error creating connection pool: " + e.err.Error()
+}
+
+type ErrPgInsert struct {
+	err error
+}
+
+func (e *ErrPgInsert) Error() string {
+	return "failed to insert row: " + e.err.Error()
+}
+
+type ErrPgDelete struct {
+	err error
+}
+
+func (e *ErrPgDelete) Error() string {
+	return "failed to delete row: " + e.err.Error()
+}
+
+type ErrQueryRow struct {
+	err error
+}
+
+func (e *ErrQueryRow) Error() string {
+	return "error querying row: " + e.err.Error()
+}
+
+type ErrRowExists struct {
+	err error
+}
+
+func (e *ErrRowExists) Error() string {
+	return "failed to check if row exists: " + e.err.Error()
+}
+
+type ErrExecQuery struct {
+	err error
+}
+
+func (e *ErrExecQuery) Error() string {
+	return "error executing query: " + e.err.Error()
+}
+
+type ErrNoRows struct{}
+
+func (e *ErrNoRows) Error() string {
+	return "error no rows affected"
+}
+
+type ErrCollectRows struct {
+	err error
+}
+
+func (e *ErrCollectRows) Error() string {
+	return "failed to collect rows to struct: " + e.err.Error()
+}
+
+type ErrNilPgxTx struct{}
+
+func (e *ErrNilPgxTx) Error() string {
+	return "error nil PgxTx"
+}
+
+type ErrNilPgxPool struct{}
+
+func (e *ErrNilPgxPool) Error() string {
+	return "error nil connection pool"
+}
+
+type ErrInvalidStmt struct{}
+
+func (e *ErrInvalidStmt) Error() string {
+	return "invalid sql statement"
+}
+
+const (
+	SelectKeyword string = "select"
+	InsertKeyword string = "insert"
+	DeleteKeyword string = "delete"
+)
+
+type PgxPool interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
+	Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error)
+}
+
+// NewPgxPool creates a pgxpool.Pool
+func NewPgxPool(ctx context.Context, connUrl string) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, connUrl)
+	if err != nil {
+		return nil, &ErrPgxConn{err}
+	}
+
+	return pool, nil
+}
+
+type PgxTx interface {
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
+}
+
+type {{.Name.Pascal}}Opt func(a *{{.Name.Pascal}}Adapter) error
+
+// WithPgxTx sets the transaction adapter
+func WithPgxTx(tx PgxTx) {{.Name.Pascal}}Opt {
+	return func(a *{{.Name.Pascal}}Adapter) error {
+		a.tx = tx
+		return nil
+	}
+}
+
+// WithPgxPool sets the adapter's connection
+func WithPgxPool(pool PgxPool) {{.Name.Pascal}}Opt {
+	return func(a *{{.Name.Pascal}}Adapter) error {
+		a.conn = pool
+		return nil
+	}
+}
+
+func WithPgSpanAttrs(attrs ...attribute.KeyValue) {{.Name.Pascal}}Opt {
+	return func(a *{{.Name.Pascal}}Adapter) error {
+		a.attributes = append(a.attributes, attrs...)
+		return nil
+	}
+}
+
+type {{.Name.Pascal}}Adapter struct {
+	conn       PgxPool
+	tx         PgxTx
+	logger     *slog.Logger
+	tracer     trace.Tracer
+	attributes []attribute.KeyValue
+}
+
+type S{{.Name.Pascal}}Adapter[T any] struct {
+	*{{.Name.Pascal}}Adapter
+}
+
+// New{{.Name.Pascal}}Adapter creates a new {{.Name.Pascal}}Adapter
+func New{{.Name.Pascal}}Adapter(ctx context.Context, logger *slog.Logger, tracer trace.Tracer, opts ...{{.Name.Pascal}}Opt) *{{.Name.Pascal}}Adapter {
+	adapter := &{{.Name.Pascal}}Adapter{
+		logger: logger,
+		tracer: tracer,
+	}
+
+	for _, opt := range opts {
+		opt(adapter)
+	}
+
+	return adapter
+}
+
+// NewTransactionAdapter creates an adapter for executing transactions
+func (a *{{.Name.Pascal}}Adapter) NewTransactionAdapter(ctx context.Context) (*{{.Name.Pascal}}Adapter, error) {
+	if a.conn == nil {
+		a.logger.Error("nil connection in {{.Name.Pascal}}Adapter")
+		return nil, &ErrNilPgxPool{}
+	}
+
+	tx, err := a.conn.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	txAdapter := New{{.Name.Pascal}}Adapter(ctx, a.logger, a.tracer,
+		WithPgxPool(tx),
+		WithPgxTx(tx),
+	)
+
+	return txAdapter, nil
+}
+
+// Commit commits the transaction after first checking if the context has been canceled
+func (a *{{.Name.Pascal}}Adapter) Commit(ctx context.Context) error {
+	if a.tx == nil {
+		a.logger.Error("nil PgxTx in {{.Name.Pascal}}Adapter")
+		return &ErrNilPgxTx{}
+	}
+
+	select {
+	case <-ctx.Done():
+		ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+		defer cancel()
+
+		return a.tx.Rollback(ctx)
+	default:
+		return a.tx.Commit(ctx)
+	}
+}
+
+// Rollback initiates a transaction rollback
+func (a *{{.Name.Pascal}}Adapter) Rollback(ctx context.Context) error {
+	if a.tx == nil {
+		a.logger.Error("nil PgxTx in {{.Name.Pascal}}Adapter")
+		return &ErrNilPgxTx{}
+	}
+
+	return a.tx.Rollback(ctx)
+}
+
+// ConnectionPool returns the underlying pgxpool
+func (a *{{.Name.Pascal}}Adapter) ConnectionPool() PgxPool {
+	return a.conn
+}
+
+// Exec executes the supplied sql statement and returns the number of rows affected
+func (a *{{.Name.Pascal}}Adapter) Exec(ctx context.Context, sql string, args map[string]interface{}) (int64, error) {
+	if a.conn == nil {
+		a.logger.Error("nil connection in {{.Name.Pascal}}Adapter")
+		return 0, &ErrNilPgxPool{}
+	}
+
+	ctx, span := a.tracer.Start(ctx, "EXEC",
+		trace.WithLinks(trace.LinkFromContext(ctx)),
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("db.system.name", "postgresql"),
+			attribute.String("db.query.text", sql),
+		),
+	)
+	defer span.End()
+
+	if a.attributes != nil {
+		span.SetAttributes(a.attributes...)
+	}
+
+	resp, err := a.conn.Exec(ctx, sql, args)
+	if err != nil {
+		return 0, &ErrExecQuery{err}
+	}
+
+	return resp.RowsAffected(), nil
+}
+
+// Insert creates a new row returns the id
+func (a *{{.Name.Pascal}}Adapter) Insert(ctx context.Context, sql string, args map[string]interface{}) (int, error) {
+	if a.conn == nil {
+		a.logger.Error("nil connection in {{.Name.Pascal}}Adapter")
+		return 0, &ErrNilPgxPool{}
+	}
+
+	if !validStatement(InsertKeyword, sql) {
+		return 0, &ErrInvalidStmt{}
+	}
+
+	ctx, span := a.tracer.Start(ctx, "INSERT",
+		trace.WithLinks(trace.LinkFromContext(ctx)),
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("db.system.name", "postgresql"),
+			attribute.String("db.operation.name", "INSERT"),
+			attribute.String("db.query.text", sql),
+		),
+	)
+	defer span.End()
+
+	if a.attributes != nil {
+		span.SetAttributes(a.attributes...)
+	}
+
+	var id int
+	if err := a.conn.QueryRow(ctx, sql, args).Scan(&id); err != nil {
+		return 0, &ErrPgInsert{err}
+	}
+
+	return id, nil
+}
+
+const ExInsertQuery string = `
+    INSERT INTO table (
+        data
+    ) VALUES (
+        @data
+    ) RETURNING id
+`
+
+// Delete deletes the supplied row
+func (a *{{.Name.Pascal}}Adapter) Delete(ctx context.Context, sql string, args map[string]interface{}) error {
+	if a.conn == nil {
+		a.logger.Error("nil connection in {{.Name.Pascal}}Adapter")
+		return &ErrNilPgxPool{}
+	}
+
+	if !validStatement(DeleteKeyword, sql) {
+		return &ErrInvalidStmt{}
+	}
+
+	ctx, span := a.tracer.Start(ctx, "DELETE",
+		trace.WithLinks(trace.LinkFromContext(ctx)),
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("db.system.name", "postgresql"),
+			attribute.String("db.operation.name", "DELETE"),
+			attribute.String("db.query.text", sql),
+		),
+	)
+	defer span.End()
+
+	if a.attributes != nil {
+		span.SetAttributes(a.attributes...)
+	}
+
+	resp, err := a.conn.Exec(ctx, sql, args)
+	if err != nil {
+		return &ErrPgDelete{err}
+	}
+
+	if resp.RowsAffected() == 0 {
+		return &ErrNoRows{}
+	}
+
+	return nil
+}
+
+const ExDeleteQuery string = `
+    DELETE FROM table
+    WHERE id = @id
+`
+
+func (a *{{.Name.Pascal}}Adapter) RowExists(ctx context.Context, sql string, args map[string]interface{}) (bool, error) {
+	if a.conn == nil {
+		a.logger.Error("nil connection in {{.Name.Pascal}}Adapter")
+		return false, &ErrNilPgxPool{}
+	}
+
+	if !validStatement(SelectKeyword, sql) {
+		return false, &ErrInvalidStmt{}
+	}
+
+	ctx, span := a.tracer.Start(ctx, "SELECT",
+		trace.WithLinks(trace.LinkFromContext(ctx)),
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("db.system.name", "postgresql"),
+			attribute.String("db.operation.name", "SELECT"),
+			attribute.String("db.query.text", sql),
+		),
+	)
+	defer span.End()
+
+	if a.attributes != nil {
+		span.SetAttributes(a.attributes...)
+	}
+
+	var id int
+	err := a.conn.QueryRow(ctx, sql, args).Scan(&id)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, &ErrRowExists{err}
+	}
+
+	if id == 0 || errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+const ExRowExistsQuery string = `
+    SELECT id
+    FROM table
+    WHERE id = @id
+`
+
+func validStatement(keyword string, sql string) bool {
+	stmt := strings.TrimLeftFunc(sql, unicode.IsSpace)
+
+	return strings.ToLower(keyword) == strings.ToLower(stmt[:len(keyword)])
+}

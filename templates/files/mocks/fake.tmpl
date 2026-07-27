@@ -1,0 +1,34 @@
+package {{.Package}}
+{{- if .Lists.import}}
+
+import (
+{{- range .Lists.import}}
+	"{{.}}"
+{{- end}}
+)
+{{- end}}
+
+// Fake{{.Name.Pascal}} is a hand written fake for the {{.Name.Pascal}} port. Set the
+// fields for the methods a test exercises and leave the rest nil
+type Fake{{.Name.Pascal}} struct {
+{{- range .Methods}}
+	{{.Name.Pascal}}Func func({{.Params}}) {{.Results}}
+{{- end}}
+{{- range .Methods}}
+	{{.Name.Camel}}Calls int
+{{- end}}
+}
+{{range .Methods}}
+// {{.Name.Pascal}} records the call and delegates to {{.Name.Pascal}}Func
+func (f *Fake{{$.Name.Pascal}}) {{.Name.Pascal}}({{.Params}}) {{.Results}} {
+	f.{{.Name.Camel}}Calls++
+
+	{{if .HasResults}}return {{end}}f.{{.Name.Pascal}}Func({{.Args}})
+}
+{{end}}
+{{- range .Methods}}
+// {{.Name.Pascal}}CallCount returns how many times {{.Name.Pascal}} was called
+func (f *Fake{{$.Name.Pascal}}) {{.Name.Pascal}}CallCount() int {
+	return f.{{.Name.Camel}}Calls
+}
+{{end -}}

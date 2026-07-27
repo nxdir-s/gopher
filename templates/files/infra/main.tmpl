@@ -1,0 +1,45 @@
+package main
+
+import (
+	"os"
+
+	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/jsii-runtime-go"
+)
+
+const (
+	AccountEnv string = "CDK_DEFAULT_ACCOUNT"
+	RegionEnv  string = "CDK_DEFAULT_REGION"
+
+	StackName string = "{{.Name.Pascal}}Stack"
+)
+
+func main() {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+
+	New{{.Name.Pascal}}Stack(app, StackName, &{{.Name.Pascal}}StackProps{
+		awscdk.StackProps{
+			Env: environment(),
+		},
+	})
+
+	app.Synth(nil)
+}
+
+// environment resolves the target account and region from the cdk cli. Returning
+// nil leaves the stack environment agnostic, so it deploys wherever it is synthed
+func environment() *awscdk.Environment {
+	account := os.Getenv(AccountEnv)
+	region := os.Getenv(RegionEnv)
+
+	if len(account) == 0 || len(region) == 0 {
+		return nil
+	}
+
+	return &awscdk.Environment{
+		Account: jsii.String(account),
+		Region:  jsii.String(region),
+	}
+}

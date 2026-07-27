@@ -1,0 +1,26 @@
+// internal/auth/auth.go
+// Package auth holds the auth module
+package auth
+
+type ErrNilAuth struct{}
+
+func (e *ErrNilAuth) Error() string {
+	return "error nil auth"
+}
+
+type AuthOpt func(m *Auth) error
+
+type Auth struct{}
+
+// NewAuth creates the auth module
+func NewAuth(opts ...AuthOpt) (*Auth, error) {
+	module := &Auth{}
+
+	for _, opt := range opts {
+		if err := opt(module); err != nil {
+			return nil, err
+		}
+	}
+
+	return module, nil
+}

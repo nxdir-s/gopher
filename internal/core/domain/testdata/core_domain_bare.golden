@@ -1,0 +1,36 @@
+// internal/core/domain/orders.go
+package domain
+
+type ErrNilOrdersDependency struct {
+	name string
+}
+
+func (e *ErrNilOrdersDependency) Error() string {
+	return "error nil " + e.name + " in Orders"
+}
+
+type OrdersOpt func(d *Orders) error
+
+type Orders struct{}
+
+// NewOrders creates the orders domain
+func NewOrders(opts ...OrdersOpt) (*Orders, error) {
+	domain := &Orders{}
+
+	for _, opt := range opts {
+		if err := opt(domain); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := domain.validateDeps(); err != nil {
+		return nil, err
+	}
+
+	return domain, nil
+}
+
+// validateDeps checks that every port the domain drives was supplied
+func (d *Orders) validateDeps() error {
+	return nil
+}
