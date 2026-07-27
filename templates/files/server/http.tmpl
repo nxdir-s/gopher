@@ -1,0 +1,178 @@
+package {{.Package}}
+
+import (
+	"context"
+	"errors"
+	"net/http"
+{{- if .Logger}}
+	"log/slog"
+{{- end}}
+	"time"
+{{- if .Tracer}}
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+{{- end}}
+)
+
+const (
+	DefaultPort            string        = "{{.Flags.port}}"
+	DefaultReadTimeout     time.Duration = 5 * time.Second
+	DefaultWriteTimeout    time.Duration = 10 * time.Second
+	DefaultIdleTimeout     time.Duration = 120 * time.Second
+	DefaultShutdownTimeout time.Duration = 15 * time.Second
+)
+
+type ErrServe struct {
+	err error
+}
+
+func (e *ErrServe) Error() string {
+	return "http server stopped: " + e.err.Error()
+}
+
+type ErrShutdown struct {
+	err error
+}
+
+func (e *ErrShutdown) Error() string {
+	return "failed to shut down http server: " + e.err.Error()
+}
+
+type {{.Name.Pascal}}Opt func(a *{{.Name.Pascal}}Adapter) error
+
+// With{{.Name.Pascal}}Port sets the port the server listens on
+func With{{.Name.Pascal}}Port(port string) {{.Name.Pascal}}Opt {
+	return func(a *{{.Name.Pascal}}Adapter) error {
+		a.server.Addr = ":" + port
+
+		return nil
+	}
+}
+
+// With{{.Name.Pascal}}Timeouts overrides the server timeouts
+func With{{.Name.Pascal}}Timeouts(read time.Duration, write time.Duration, idle time.Duration) {{.Name.Pascal}}Opt {
+	return func(a *{{.Name.Pascal}}Adapter) error {
+		a.server.ReadTimeout = read
+		a.server.WriteTimeout = write
+		a.server.IdleTimeout = idle
+
+		return nil
+	}
+}
+
+// With{{.Name.Pascal}}ShutdownTimeout sets how long in flight requests are given to finish
+func With{{.Name.Pascal}}ShutdownTimeout(timeout time.Duration) {{.Name.Pascal}}Opt {
+	return func(a *{{.Name.Pascal}}Adapter) error {
+		a.shutdownTimeout = timeout
+
+		return nil
+	}
+}
+{{- if .Tracer}}
+
+// With{{.Name.Pascal}}SpanAttrs adds attributes to the adapter's spans
+func With{{.Name.Pascal}}SpanAttrs(attrs ...attribute.KeyValue) {{.Name.Pascal}}Opt {
+	return func(a *{{.Name.Pascal}}Adapter) error {
+		a.attributes = append(a.attributes, attrs...)
+
+		return nil
+	}
+}
+{{- end}}
+
+type {{.Name.Pascal}}Adapter struct {
+	server          *http.Server
+	router          *http.ServeMux
+{{- if .Logger}}
+	logger          *slog.Logger
+{{- end}}
+{{- if .Tracer}}
+	tracer          trace.Tracer
+	attributes      []attribute.KeyValue
+{{- end}}
+	shutdownTimeout time.Duration
+}
+
+// New{{.Name.Pascal}}Adapter creates the primary adapter that serves http traffic
+func New{{.Name.Pascal}}Adapter({{if .Logger}}logger *slog.Logger, {{end}}{{if .Tracer}}tracer trace.Tracer, {{end}}opts ...{{.Name.Pascal}}Opt) (*{{.Name.Pascal}}Adapter, error) {
+	router := http.NewServeMux()
+
+	adapter := &{{.Name.Pascal}}Adapter{
+		router: router,
+		server: &http.Server{
+			Addr:         ":" + DefaultPort,
+			Handler:      router,
+			ReadTimeout:  DefaultReadTimeout,
+			WriteTimeout: DefaultWriteTimeout,
+			IdleTimeout:  DefaultIdleTimeout,
+		},
+{{- if .Logger}}
+		logger:          logger,
+{{- end}}
+{{- if .Tracer}}
+		tracer:          tracer,
+{{- end}}
+		shutdownTimeout: DefaultShutdownTimeout,
+	}
+
+	for _, opt := range opts {
+		if err := opt(adapter); err != nil {
+			return nil, err
+		}
+	}
+
+	return adapter, nil
+}
+
+// Handle registers a handler for the supplied pattern
+func (a *{{.Name.Pascal}}Adapter) Handle(pattern string, handler http.Handler) {
+	a.router.Handle(pattern, handler)
+}
+
+// HandleFunc registers a handler function for the supplied pattern
+func (a *{{.Name.Pascal}}Adapter) HandleFunc(pattern string, handler http.HandlerFunc) {
+	a.router.HandleFunc(pattern, handler)
+}
+
+// Serve starts the server and shuts it down when the context is canceled
+func (a *{{.Name.Pascal}}Adapter) Serve(ctx context.Context) error {
+	errs := make(chan error, 1)
+
+	go func() {
+		if err := a.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errs <- &ErrServe{err}
+
+			return
+		}
+
+		errs <- nil
+	}()
+{{- if .Logger}}
+
+	a.logger.Info("http server listening", slog.String("addr", a.server.Addr))
+{{- end}}
+
+	select {
+	case err := <-errs:
+		return err
+	case <-ctx.Done():
+		return a.Shutdown()
+	}
+}
+
+// Shutdown stops the server, giving in flight requests time to finish
+func (a *{{.Name.Pascal}}Adapter) Shutdown() error {
+	ctx, cancel := context.WithTimeout(context.Background(), a.shutdownTimeout)
+	defer cancel()
+{{- if .Logger}}
+
+	a.logger.Info("shutting down http server")
+{{- end}}
+
+	if err := a.server.Shutdown(ctx); err != nil {
+		return &ErrShutdown{err}
+	}
+
+	return nil
+}

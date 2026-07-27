@@ -1,0 +1,14 @@
+package valobj
+
+import "time"
+
+// Timing holds the phase durations recorded for a single http request. Every
+// field is zero when the phase did not happen, for example TLSHandshake on a
+// plaintext connection or TCPConnect on a reused one
+type Timing struct {
+	DNSLookup    time.Duration `json:"dns_lookup"`
+	TCPConnect   time.Duration `json:"tcp_connect"`
+	TLSHandshake time.Duration `json:"tls_handshake"`
+	TTFB         time.Duration `json:"ttfb"`
+	Total        time.Duration `json:"total"`
+}

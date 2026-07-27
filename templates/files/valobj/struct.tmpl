@@ -1,0 +1,23 @@
+package {{.Package}}
+{{- if .Lists.import}}
+
+import (
+{{- range .Lists.import}}
+	"{{.}}"
+{{- end}}
+)
+{{- end}}
+
+{{- if .Fields}}
+
+// {{.Name.Pascal}} is an immutable value shared across the core
+type {{.Name.Pascal}} struct {
+{{- range .Fields}}
+	{{.Name.Pascal}} {{.Type}}{{if .Tag}} `{{.Tag}}`{{end}}
+{{- end}}
+}
+{{- else}}
+
+// {{.Name.Pascal}} is an immutable value shared across the core
+type {{.Name.Pascal}} struct{}
+{{- end}}

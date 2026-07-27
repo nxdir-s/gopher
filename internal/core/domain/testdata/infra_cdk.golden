@@ -1,0 +1,96 @@
+// infra/main.go
+package main
+
+import (
+	"os"
+
+	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/jsii-runtime-go"
+)
+
+const (
+	AccountEnv string = "CDK_DEFAULT_ACCOUNT"
+	RegionEnv  string = "CDK_DEFAULT_REGION"
+
+	StackName string = "OrdersStack"
+)
+
+func main() {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+
+	NewOrdersStack(app, StackName, &OrdersStackProps{
+		awscdk.StackProps{
+			Env: environment(),
+		},
+	})
+
+	app.Synth(nil)
+}
+
+// environment resolves the target account and region from the cdk cli. Returning
+// nil leaves the stack environment agnostic, so it deploys wherever it is synthed
+func environment() *awscdk.Environment {
+	account := os.Getenv(AccountEnv)
+	region := os.Getenv(RegionEnv)
+
+	if len(account) == 0 || len(region) == 0 {
+		return nil
+	}
+
+	return &awscdk.Environment{
+		Account: jsii.String(account),
+		Region:  jsii.String(region),
+	}
+}
+// infra/orders_stack.go
+package main
+
+import (
+	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/constructs-go/constructs/v10"
+	"github.com/aws/jsii-runtime-go"
+)
+
+type OrdersStackProps struct {
+	awscdk.StackProps
+}
+
+// NewOrdersStack declares the resources the orders stack owns
+func NewOrdersStack(scope constructs.Construct, id string, props *OrdersStackProps) awscdk.Stack {
+	var stackProps awscdk.StackProps
+	if props != nil {
+		stackProps = props.StackProps
+	}
+
+	stack := awscdk.NewStack(scope, jsii.String(id), &stackProps)
+
+	// TODO: declare the resources this stack owns, for example
+	//
+	//	awss3.NewBucket(stack, jsii.String("OrdersBucket"), &awss3.BucketProps{
+	//		BucketName:        jsii.String("orders"),
+	//		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+	//		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+	//		RemovalPolicy:     awscdk.RemovalPolicy_RETAIN,
+	//	})
+
+	return stack
+}
+// infra/cdk.json
+{
+  "app": "go mod tidy && go run .",
+  "watch": {
+    "include": ["**"],
+    "exclude": ["README.md", "cdk*.json", "go.mod", "go.sum", "**/*test.go"]
+  },
+  "context": {
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/core:target-partitions": ["aws", "aws-cn"],
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+    "@aws-cdk/core:validateSnapshotRemovalPolicy": true,
+    "@aws-cdk/aws-s3:createDefaultLoggingPolicy": true,
+    "@aws-cdk/core:enablePartitionLiterals": true
+  }
+}

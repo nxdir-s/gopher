@@ -1,0 +1,25 @@
+// Package {{.Name.Lower}} holds the {{.Name.Words}} module
+package {{.Name.Lower}}
+
+type ErrNil{{.Name.Pascal}} struct{}
+
+func (e *ErrNil{{.Name.Pascal}}) Error() string {
+	return "error nil {{.Name.Words}}"
+}
+
+type {{.Name.Pascal}}Opt func(m *{{.Name.Pascal}}) error
+
+type {{.Name.Pascal}} struct{}
+
+// New{{.Name.Pascal}} creates the {{.Name.Words}} module
+func New{{.Name.Pascal}}(opts ...{{.Name.Pascal}}Opt) (*{{.Name.Pascal}}, error) {
+	module := &{{.Name.Pascal}}{}
+
+	for _, opt := range opts {
+		if err := opt(module); err != nil {
+			return nil, err
+		}
+	}
+
+	return module, nil
+}

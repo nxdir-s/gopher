@@ -1,0 +1,55 @@
+package config
+
+import "os"
+
+const (
+	EnvKey      string = "APP_ENV"
+	LogLevelKey string = "LOG_LEVEL"
+
+	DefaultEnv      string = "local"
+	DefaultLogLevel string = "info"
+)
+
+type ErrMissingEnv struct {
+	key string
+}
+
+func (e *ErrMissingEnv) Error() string {
+	return "missing required environment variable: " + e.key
+}
+
+// Config holds the settings the application reads from the environment
+type Config struct {
+	Env      string
+	LogLevel string
+}
+
+// Load reads the configuration from the environment
+func Load() (*Config, error) {
+	cfg := &Config{
+		Env:      lookup(EnvKey, DefaultEnv),
+		LogLevel: lookup(LogLevelKey, DefaultLogLevel),
+	}
+
+	return cfg, nil
+}
+
+// lookup returns the value of the environment variable or the fallback
+func lookup(key string, fallback string) string {
+	value, ok := os.LookupEnv(key)
+	if !ok || len(value) == 0 {
+		return fallback
+	}
+
+	return value
+}
+
+// require returns the value of the environment variable or an error
+func require(key string) (string, error) {
+	value, ok := os.LookupEnv(key)
+	if !ok || len(value) == 0 {
+		return "", &ErrMissingEnv{key}
+	}
+
+	return value, nil
+}

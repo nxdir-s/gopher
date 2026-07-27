@@ -1,0 +1,12 @@
+// internal/ports/secondary.go
+package ports
+
+import (
+	"context"
+)
+
+// OrderRepository defines how the core drives the order repository
+type OrderRepository interface {
+	Save(ctx context.Context, order *entity.Order) error
+	Find(ctx context.Context, id int) (*entity.Order, error)
+}

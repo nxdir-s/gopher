@@ -1,0 +1,11 @@
+// internal/ports/primary.go
+package ports
+
+import (
+	"context"
+)
+
+// API defines how external entities interact with the core
+type API interface {
+	PlaceOrder(ctx context.Context, total float64) (int, error)
+}

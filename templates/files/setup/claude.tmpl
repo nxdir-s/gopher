@@ -1,0 +1,54 @@
+# {{.Name.Pascal}}
+
+Module: `{{.Module}}`
+
+## Generating code
+
+This project uses [gopher](https://github.com/nxdir-s/gopher) to generate Go
+files from templates. **Prefer `gopher generate` over writing these file types
+by hand** — the templates encode this project's conventions for architecture,
+naming, error handling, and telemetry, so generated code needs less rework.
+
+Discover the interface instead of guessing at flags:
+
+```bash
+gopher list --json              # the available types
+gopher describe adapter --json  # the flags a type accepts
+```
+
+Then generate, read the result, and adjust it with the surrounding context:
+
+```bash
+gopher generate adapter --kind postgres --name Orders
+gopher generate entity --name Order --field 'ID:int' --field 'Total:float64' --json
+gopher generate port --name OrderRepository --method 'Save(ctx context.Context, order *entity.Order) error'
+gopher generate domain --name Orders --port 'repo:ports.OrderRepository'
+```
+
+Useful flags: `--stdout` previews without writing, `--dry-run` prints the paths,
+and existing files are never overwritten without `--force`. The `port` generator
+appends to the shared ports files and is a no-op if the interface already exists.
+
+## Architecture
+
+Hexagonal, with inputs and outputs at the edges. Business logic never depends on
+the transport it is exposed over or on where its data comes from.
+
+- `cmd/` — main packages; wire dependencies and run the application
+- `internal/adapters/` — primary and secondary adapters. Adapters own data
+  transformation, error handling, telemetry, and logging
+- `internal/core/domain/` — orchestrators for domain use cases, holding the
+  business rules and validation for a domain
+- `internal/core/entity/` — the domain object types
+- `internal/core/valobj/` — shared immutable value types
+- `internal/ports/` — the interfaces connecting the core to everything else:
+  `core.go` for domain-to-entity interaction, `primary.go` for how the core is
+  driven, `secondary.go` for what the core drives
+
+## Conventions
+
+- Errors are custom struct types with an `Error() string` method, not
+  `fmt.Errorf`. Wrap the cause: `return &ErrDoThing{err}`
+- Constructors take functional options: `NewXAdapter(logger, tracer, opts ...XOpt)`
+- Guard nil dependencies at the top of a method and return a typed error
+- Leave a blank line before a `return` that follows a statement block

@@ -1,0 +1,31 @@
+{{- $needsContext := false -}}
+{{- range .Lists.method}}{{if contains . "context.Context"}}{{$needsContext = true}}{{end}}{{end -}}
+package {{.Package}}
+{{- if or $needsContext .Lists.import}}
+
+import (
+{{- if $needsContext}}
+	"context"
+{{- end}}
+{{- if .Lists.import}}
+{{- if $needsContext}}
+{{end}}
+{{- range .Lists.import}}
+	"{{.}}"
+{{- end}}
+{{- end}}
+)
+{{- end}}
+
+{{if eq .Flags.side "primary" -}}
+// {{.Name.Pascal}} defines how external entities interact with the core
+{{- else if eq .Flags.side "core" -}}
+// {{.Name.Pascal}} defines how domains interact with internal and external entities
+{{- else -}}
+// {{.Name.Pascal}} defines how the core drives the {{.Name.Words}}
+{{- end}}
+type {{.Name.Pascal}} interface {
+{{- range .Lists.method}}
+	{{.}}
+{{- end}}
+}

@@ -1,0 +1,97 @@
+// internal/adapters/events.go
+package adapters
+
+import (
+	"context"
+	"log/slog"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+)
+
+type ErrNilEventsClient struct{}
+
+func (e *ErrNilEventsClient) Error() string {
+	return "error nil client in EventsAdapter"
+}
+
+type EventsClient interface {
+	Close() error
+}
+
+type EventsOpt func(a *EventsAdapter) error
+
+// WithEventsClient sets the adapter's client
+func WithEventsClient(client EventsClient) EventsOpt {
+	return func(a *EventsAdapter) error {
+		a.client = client
+
+		return nil
+	}
+}
+
+// WithEventsSpanAttrs adds attributes to the adapter's spans
+func WithEventsSpanAttrs(attrs ...attribute.KeyValue) EventsOpt {
+	return func(a *EventsAdapter) error {
+		a.attributes = append(a.attributes, attrs...)
+
+		return nil
+	}
+}
+
+type EventsAdapter struct {
+	client     EventsClient
+	logger     *slog.Logger
+	tracer     trace.Tracer
+	attributes []attribute.KeyValue
+}
+
+// NewEventsAdapter creates a new EventsAdapter
+func NewEventsAdapter(logger *slog.Logger, tracer trace.Tracer, opts ...EventsOpt) (*EventsAdapter, error) {
+	adapter := &EventsAdapter{
+		logger: logger,
+		tracer: tracer,
+	}
+
+	for _, opt := range opts {
+		if err := opt(adapter); err != nil {
+			return nil, err
+		}
+	}
+
+	return adapter, nil
+}
+
+// Do is an example of the adapter's traced operations. Replace it with the
+// methods this adapter actually exposes
+func (a *EventsAdapter) Do(ctx context.Context) error {
+	if a.client == nil {
+		a.logger.Error("nil client in EventsAdapter")
+
+		return &ErrNilEventsClient{}
+	}
+
+	_, span := a.tracer.Start(ctx, "events do",
+		trace.WithLinks(trace.LinkFromContext(ctx)),
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("events.operation.name", "do"),
+		),
+	)
+	defer span.End()
+
+	if a.attributes != nil {
+		span.SetAttributes(a.attributes...)
+	}
+
+	return nil
+}
+
+// Close closes the underlying client
+func (a *EventsAdapter) Close() error {
+	if a.client == nil {
+		return nil
+	}
+
+	return a.client.Close()
+}

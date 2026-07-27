@@ -1,0 +1,60 @@
+package entity
+
+import (
+	"bytes"
+
+	"{{.Module}}/internal/core/valobj"
+)
+
+const (
+	StatusSuccessMin int = 200
+	StatusSuccessMax int = 299
+)
+
+// Response is the result of an http request. Body is buffered because the
+// adapter reads and closes the underlying stream before returning
+type Response struct {
+	StatusCode    int             `json:"status_code"`
+	Status        string          `json:"status"`
+	Headers       []valobj.Header `json:"headers,omitempty"`
+	Body          *bytes.Buffer   `json:"-"`
+	ContentType   string          `json:"content_type,omitempty"`
+	ContentLength int64           `json:"content_length"`
+	Timing        valobj.Timing   `json:"timing"`
+}
+
+// Success reports whether the response carried a 2XX status code
+func (r *Response) Success() bool {
+	return r.StatusCode >= StatusSuccessMin && r.StatusCode <= StatusSuccessMax
+}
+
+// String returns the response body
+func (r *Response) String() string {
+	if r.Body == nil {
+		return ""
+	}
+
+	return r.Body.String()
+}
+
+// Bytes returns the response body
+func (r *Response) Bytes() []byte {
+	if r.Body == nil {
+		return nil
+	}
+
+	return r.Body.Bytes()
+}
+
+// Header returns the value of the first header with the supplied key
+func (r *Response) Header(key string) (string, bool) {
+	for i := range r.Headers {
+		if r.Headers[i].Key != key {
+			continue
+		}
+
+		return r.Headers[i].Value, true
+	}
+
+	return "", false
+}

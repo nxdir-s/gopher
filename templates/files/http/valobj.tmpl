@@ -1,0 +1,148 @@
+package valobj
+
+import "strings"
+
+type ErrUnknownMethod struct {
+	name string
+}
+
+func (e *ErrUnknownMethod) Error() string {
+	return "unknown http method: " + e.name
+}
+
+type ErrUnknownBodyType struct {
+	name string
+}
+
+func (e *ErrUnknownBodyType) Error() string {
+	return "unknown body type: " + e.name
+}
+
+// Method is an http request method
+type Method int
+
+const (
+	MethodGet Method = iota
+	MethodHead
+	MethodPost
+	MethodPut
+	MethodPatch
+	MethodDelete
+	MethodConnect
+	MethodOptions
+	MethodTrace
+)
+
+var methodNames = map[Method]string{
+	MethodGet:     "GET",
+	MethodHead:    "HEAD",
+	MethodPost:    "POST",
+	MethodPut:     "PUT",
+	MethodPatch:   "PATCH",
+	MethodDelete:  "DELETE",
+	MethodConnect: "CONNECT",
+	MethodOptions: "OPTIONS",
+	MethodTrace:   "TRACE",
+}
+
+// String returns the method as the verb sent on the wire
+func (m Method) String() string {
+	name, ok := methodNames[m]
+	if !ok {
+		return methodNames[MethodGet]
+	}
+
+	return name
+}
+
+// MarshalJSON encodes the method as its verb
+func (m Method) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + m.String() + `"`), nil
+}
+
+// ParseMethod resolves a verb to its Method
+func ParseMethod(name string) (Method, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(name))
+
+	for method, verb := range methodNames {
+		if verb == normalized {
+			return method, nil
+		}
+	}
+
+	return MethodGet, &ErrUnknownMethod{name}
+}
+
+// BodyType describes how a request body is encoded
+type BodyType int
+
+const (
+	BodyTypeRaw BodyType = iota
+	BodyTypeJSON
+	BodyTypeFormURL
+	BodyTypeFormData
+)
+
+var bodyTypeNames = map[BodyType]string{
+	BodyTypeRaw:      "raw",
+	BodyTypeJSON:     "json",
+	BodyTypeFormURL:  "form-url",
+	BodyTypeFormData: "form-data",
+}
+
+// String returns the canonical name of the body type
+func (b BodyType) String() string {
+	name, ok := bodyTypeNames[b]
+	if !ok {
+		return bodyTypeNames[BodyTypeRaw]
+	}
+
+	return name
+}
+
+// MarshalJSON encodes the body type as its canonical name
+func (b BodyType) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + b.String() + `"`), nil
+}
+
+// ParseBodyType resolves a name to its BodyType
+func ParseBodyType(name string) (BodyType, error) {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+
+	for bodyType, bodyName := range bodyTypeNames {
+		if bodyName == normalized {
+			return bodyType, nil
+		}
+	}
+
+	return BodyTypeRaw, &ErrUnknownBodyType{name}
+}
+
+// Header is a single request or response header. Disabled headers are kept so a
+// caller can toggle one without losing what it held
+type Header struct {
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	Enabled bool   `json:"enabled"`
+}
+
+// FormField is a single field of a form encoded request body. A value prefixed
+// with '@' is read as a path and attached as a file
+type FormField struct {
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	Enabled bool   `json:"enabled"`
+}
+
+// FilePrefix marks a form field value that should be attached as a file
+const FilePrefix string = "@"
+
+// IsFile reports whether the field attaches a file rather than a literal value
+func (f FormField) IsFile() bool {
+	return strings.HasPrefix(f.Value, FilePrefix)
+}
+
+// Path returns the file path a file field points at
+func (f FormField) Path() string {
+	return strings.TrimPrefix(f.Value, FilePrefix)
+}

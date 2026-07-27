@@ -1,0 +1,100 @@
+package {{.Package}}
+
+{{- if or .Logger .Tracer .Ports .Lists.import}}
+
+import (
+{{- if .Logger}}
+	"log/slog"
+{{- end}}
+{{- range .Lists.import}}
+	"{{.}}"
+{{- end}}
+{{- if .Ports}}
+
+	"{{.Module}}/internal/ports"
+{{- end}}
+{{- if .Tracer}}
+
+	"go.opentelemetry.io/otel/trace"
+{{- end}}
+)
+{{- end}}
+
+type ErrNil{{.Name.Pascal}}Dependency struct {
+	name string
+}
+
+func (e *ErrNil{{.Name.Pascal}}Dependency) Error() string {
+	return "error nil " + e.name + " in {{.Name.Pascal}}"
+}
+
+type {{.Name.Pascal}}Opt func(d *{{.Name.Pascal}}) error
+{{range .Ports}}
+// With{{.Name.Pascal}} sets the {{.Name.Lower}} the domain drives
+func With{{.Name.Pascal}}({{.Name.Camel}} {{.Type}}) {{$.Name.Pascal}}Opt {
+	return func(d *{{$.Name.Pascal}}) error {
+		d.{{.Name.Camel}} = {{.Name.Camel}}
+
+		return nil
+	}
+}
+{{end}}
+{{- if or .Ports .Logger .Tracer}}
+type {{.Name.Pascal}} struct {
+{{- range .Ports}}
+	{{.Name.Camel}} {{.Type}}
+{{- end}}
+{{- if .Logger}}
+	logger *slog.Logger
+{{- end}}
+{{- if .Tracer}}
+	tracer trace.Tracer
+{{- end}}
+}
+{{- else}}
+type {{.Name.Pascal}} struct{}
+{{- end}}
+
+// New{{.Name.Pascal}} creates the {{.Name.Lower}} domain
+func New{{.Name.Pascal}}({{if .Logger}}logger *slog.Logger, {{end}}{{if .Tracer}}tracer trace.Tracer, {{end}}opts ...{{.Name.Pascal}}Opt) (*{{.Name.Pascal}}, error) {
+{{- if or .Logger .Tracer}}
+	domain := &{{.Name.Pascal}}{
+{{- if .Logger}}
+		logger: logger,
+{{- end}}
+{{- if .Tracer}}
+		tracer: tracer,
+{{- end}}
+	}
+{{- else}}
+	domain := &{{.Name.Pascal}}{}
+{{- end}}
+
+	for _, opt := range opts {
+		if err := opt(domain); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := domain.validateDeps(); err != nil {
+		return nil, err
+	}
+
+	return domain, nil
+}
+
+// validateDeps checks that every port the domain drives was supplied
+func (d *{{.Name.Pascal}}) validateDeps() error {
+{{- if .Ports}}
+	switch {
+{{- range .Ports}}
+	case d.{{.Name.Camel}} == nil:
+		return &ErrNil{{$.Name.Pascal}}Dependency{"{{.Name.Pascal}}"}
+{{- end}}
+	default:
+		return nil
+	}
+{{- else}}
+	return nil
+{{- end}}
+}

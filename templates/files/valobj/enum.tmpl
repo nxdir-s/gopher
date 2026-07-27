@@ -1,0 +1,54 @@
+package {{.Package}}
+
+import "strings"
+
+type ErrUnknown{{.Name.Pascal}} struct {
+	name string
+}
+
+func (e *ErrUnknown{{.Name.Pascal}}) Error() string {
+	return "unknown {{.Name.Lower}}: " + e.name
+}
+
+type {{.Name.Pascal}} int
+
+const (
+	{{.Name.Pascal}}Unknown {{.Name.Pascal}} = iota
+{{- range .Lists.value}}
+	{{$.Name.Pascal}}{{pascal .}}
+{{- end}}
+)
+
+var {{.Name.Camel}}Names = map[{{.Name.Pascal}}]string{
+{{- range .Lists.value}}
+	{{$.Name.Pascal}}{{pascal .}}: "{{snake .}}",
+{{- end}}
+}
+
+// String returns the canonical name of the {{.Name.Lower}}
+func (v {{.Name.Pascal}}) String() string {
+	name, ok := {{.Name.Camel}}Names[v]
+	if !ok {
+		return "unknown"
+	}
+
+	return name
+}
+
+// MarshalJSON encodes the {{.Name.Lower}} as its canonical name
+func (v {{.Name.Pascal}}) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + v.String() + `"`), nil
+}
+
+// Parse{{.Name.Pascal}} resolves a name to its {{.Name.Pascal}}
+func Parse{{.Name.Pascal}}(name string) ({{.Name.Pascal}}, error) {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+
+	for value, valueName := range {{.Name.Camel}}Names {
+		if valueName == normalized {
+			return value, nil
+		}
+	}
+
+	return {{.Name.Pascal}}Unknown, &ErrUnknown{{.Name.Pascal}}{name}
+}

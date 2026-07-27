@@ -1,0 +1,29 @@
+// internal/core/domain/parse_order_test.go
+package domain
+
+import "testing"
+
+func TestParseOrder(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected string
+		wantErr  bool
+	}{
+		"rejects an empty order": {},
+		"parses a valid order":   {},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			// TODO: exercise ParseOrder with test.input
+
+			if test.wantErr {
+				t.Skip("not implemented")
+			}
+
+			if test.expected != "" {
+				t.Errorf("got %q, want %q", test.input, test.expected)
+			}
+		})
+	}
+}
