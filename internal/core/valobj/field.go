@@ -19,13 +19,17 @@ type Field struct {
 
 // ParseField builds a Field from a Name:Type[:tag] declaration
 func ParseField(value string) (Field, error) {
-	parts := strings.Split(value, ":")
-	if len(parts) < 2 {
+	// cut twice rather than splitting: only the first two segments are read
+	// separately, and the tag is whatever is left joined back together
+	name, rest, ok := strings.Cut(value, ":")
+	if !ok {
 		return Field{}, &ErrInvalidField{value}
 	}
 
-	name := strings.TrimSpace(parts[0])
-	fieldType := strings.TrimSpace(parts[1])
+	fieldType, tag, tagged := strings.Cut(rest, ":")
+
+	name = strings.TrimSpace(name)
+	fieldType = strings.TrimSpace(fieldType)
 
 	if len(name) == 0 || len(fieldType) == 0 {
 		return Field{}, &ErrInvalidField{value}
@@ -36,8 +40,8 @@ func ParseField(value string) (Field, error) {
 		Type: fieldType,
 	}
 
-	if len(parts) > 2 {
-		field.Tag = strings.TrimSpace(strings.Join(parts[2:], ":"))
+	if tagged {
+		field.Tag = strings.TrimSpace(tag)
 	}
 
 	return field, nil

@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"log/slog"
+	"path/filepath"
 	"testing"
 
 	"github.com/nxdir-s/gopher/internal/adapters"
@@ -196,6 +197,50 @@ func BenchmarkGenerateCold(b *testing.B) {
 				generator, err := NewGenerator(slog.New(slog.DiscardHandler),
 					WithRegistry(NewRegistry()),
 					WithTemplateSource(adapters.NewStoreAdapter(templates.FS, templates.Root)),
+					WithRenderer(adapters.NewTemplateAdapter()),
+					WithFormatter(adapters.NewFormatAdapter()),
+					WithFileWriter(fake.NewWriter()),
+					WithMerger(adapters.NewGoSourceAdapter()),
+				)
+				if err != nil {
+					b.Fatalf("failed to create generator: %s", err.Error())
+				}
+
+				if _, err := generator.Generate(ctx, req); err != nil {
+					b.Fatalf("failed to generate: %s", err.Error())
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkGenerateOverrides is BenchmarkGenerateCold wired the way config
+// wires it in production: two override directories ahead of the embedded
+// defaults, neither of which exists. Every other Generate benchmark builds the
+// store with no override dirs at all, so none of them can see what the lookup
+// chain costs
+//
+// The dirs are subpaths under a temp dir rather than the real project and user
+// directories, so the number does not depend on whether the machine running it
+// has overrides installed
+func BenchmarkGenerateOverrides(b *testing.B) {
+	ctx := context.Background()
+
+	for _, label := range []string{"entity", "setup"} {
+		req := benchRequest(b, label)
+
+		b.Run(label, func(b *testing.B) {
+			root := b.TempDir()
+			project := filepath.Join(root, "project", ".gopher", "templates")
+			user := filepath.Join(root, "user", "gopher", "templates")
+
+			for b.Loop() {
+				generator, err := NewGenerator(slog.New(slog.DiscardHandler),
+					WithRegistry(NewRegistry()),
+					WithTemplateSource(adapters.NewStoreAdapter(templates.FS, templates.Root,
+						adapters.WithTemplateDir(project),
+						adapters.WithTemplateDir(user),
+					)),
 					WithRenderer(adapters.NewTemplateAdapter()),
 					WithFormatter(adapters.NewFormatAdapter()),
 					WithFileWriter(fake.NewWriter()),

@@ -162,15 +162,25 @@ will ever run.
 
 | Selector | Covers |
 |---|---|
-| `Template`, `Format`, `Store`, `GoSource` | the adapters, individually. `TemplateParse` and `TemplateExecute` split `Render` in half |
+| `Template`, `Format`, `Store`, `GoSource` | the adapters, individually. `TemplateParse` and `TemplateExecute` split `Render` in half, and `TemplateRender/static` is the action-free path that skips both |
 | `NewNaming`, `ParseFields` | the value-object derivations templates call per name |
 | `Generate`, `TemplateData`, `RegistrySpec` | the pipeline end to end, through the in-memory writer |
+| `GenerateOverrides` | the same, wired the way production wires it |
 | `CliRun` | argv to `Request`, with a generator stub in place |
 | `Load`, `FindModule`, `Run`, `Startup` | config resolution and startup, in and out of process |
 
 Everything writes to an in-memory `fake.Writer` except `GenerateDisk`, `FsWrite`
 and `Startup`, which are the only three that touch the disk or spawn a process —
 `make bench BENCH='Disk|Fs|Startup'` selects exactly that set.
+
+Every benchmark in the `Generate` family except `GenerateOverrides` builds its
+store with **no override directories**, which is not how `config.TemplateDirs`
+wires one — it always returns the user directory and never checks that anything
+exists. So the lookup chain those runs measure is one embedded read, while a
+real invocation pays a failed `os.ReadFile` per configured directory per
+template first. `GenerateOverrides` is the one that models production, with two
+directories that do not exist ahead of the embedded defaults. Read it against
+`GenerateCold`, whose labels it shares, to see what resolution costs.
 
 `BenchmarkStartup` is a budget, not a target: process spawn is milliseconds and
 dwarfs a generate measured in microseconds. It is useful for two subtractions —

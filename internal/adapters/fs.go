@@ -57,6 +57,7 @@ func WithDirMode(mode os.FileMode) FsOpt {
 type FsAdapter struct {
 	fileMode os.FileMode
 	dirMode  os.FileMode
+	made     map[string]struct{}
 }
 
 // NewFsAdapter creates an adapter for reading and writing files
@@ -64,6 +65,7 @@ func NewFsAdapter(opts ...FsOpt) *FsAdapter {
 	adapter := &FsAdapter{
 		fileMode: DefaultFileMode,
 		dirMode:  DefaultDirMode,
+		made:     make(map[string]struct{}, 8),
 	}
 
 	for _, opt := range opts {
@@ -74,10 +76,19 @@ func NewFsAdapter(opts ...FsOpt) *FsAdapter {
 }
 
 // Write creates the parent directories and writes the supplied data
+//
+// A directory this adapter already created is not created again. One request
+// writes a batch of files into a handful of directories, so the repeats are the
+// common case, and gopher is a short lived process whose output tree nothing
+// else is editing underneath it
 func (a *FsAdapter) Write(ctx context.Context, path string, data []byte) error {
 	if dir := filepath.Dir(path); len(dir) > 0 {
-		if err := os.MkdirAll(dir, a.dirMode); err != nil {
-			return &ErrCreateDir{dir, err}
+		if _, made := a.made[dir]; !made {
+			if err := os.MkdirAll(dir, a.dirMode); err != nil {
+				return &ErrCreateDir{dir, err}
+			}
+
+			a.made[dir] = struct{}{}
 		}
 	}
 

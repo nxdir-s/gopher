@@ -3,6 +3,7 @@ package valobj
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Naming holds the case variations derived from a single input name
@@ -22,14 +23,15 @@ func NewNaming(name string) Naming {
 	words := splitWords(name)
 	lower := lowerWords(words)
 	pascal := pascalCase(words)
+	snake := strings.Join(lower, "_")
 
 	return Naming{
 		Pascal: pascal,
 		Camel:  camelCase(words),
-		Snake:  strings.Join(lower, "_"),
+		Snake:  snake,
 		Kebab:  strings.Join(lower, "-"),
 		Lower:  strings.Join(lower, ""),
-		Upper:  strings.ToUpper(strings.Join(lower, "_")),
+		Upper:  strings.ToUpper(snake),
 		Plural: plural(pascal),
 		Words:  strings.Join(lower, " "),
 	}
@@ -118,18 +120,20 @@ func camelCase(words []string) string {
 	return b.String()
 }
 
+// the shortest and longest entries in the initialism table, so a word outside
+// the range is rejected before anything is copied
+const (
+	minInitialism int = 2
+	maxInitialism int = 5
+)
+
 // capitalize uppercases the first rune, keeping known initialisms fully capitalized
 func capitalize(word string) string {
 	if len(word) == 0 {
 		return word
 	}
 
-	// initialisms stay fully capitalized in Go identifiers
-	switch upper := strings.ToUpper(word); upper {
-	case "ACL", "API", "ASCII", "CPU", "CSS", "DB", "DNS", "EOF", "GRPC",
-		"HTML", "HTTP", "HTTPS", "ID", "IP", "JSON", "RPC", "SLA", "SQL",
-		"SSH", "TCP", "TLS", "TTL", "UDP", "UI", "URI", "URL", "UTF8",
-		"UUID", "XML":
+	if upper, ok := initialism(word); ok {
 		return upper
 	}
 
@@ -137,6 +141,45 @@ func capitalize(word string) string {
 	runes[0] = unicode.ToUpper(runes[0])
 
 	return string(runes)
+}
+
+// initialism reports the fully capitalized form of a known initialism
+//
+// The word is uppercased into a stack buffer rather than through
+// strings.ToUpper, which allocates for every word capitalize sees only for the
+// switch to reject almost all of them. Non ascii words cannot match an entry,
+// so they are rejected rather than folded
+func initialism(word string) (string, bool) {
+	if len(word) < minInitialism || len(word) > maxInitialism {
+		return "", false
+	}
+
+	var buf [maxInitialism]byte
+
+	for i := range len(word) {
+		char := word[i]
+
+		if char >= utf8.RuneSelf {
+			return "", false
+		}
+
+		if char >= 'a' && char <= 'z' {
+			char -= 'a' - 'A'
+		}
+
+		buf[i] = char
+	}
+
+	// initialisms stay fully capitalized in Go identifiers
+	switch string(buf[:len(word)]) {
+	case "ACL", "API", "ASCII", "CPU", "CSS", "DB", "DNS", "EOF", "GRPC",
+		"HTML", "HTTP", "HTTPS", "ID", "IP", "JSON", "RPC", "SLA", "SQL",
+		"SSH", "TCP", "TLS", "TTL", "UDP", "UI", "URI", "URL", "UTF8",
+		"UUID", "XML":
+		return string(buf[:len(word)]), true
+	}
+
+	return "", false
 }
 
 // plural returns the plural form of the supplied word

@@ -238,3 +238,56 @@ kind passed where a flag name belongs, but `FlagSpec.Name` and the `Flags` /
 `Lists` map keys would all have to change type, pushing a naming concern into
 the template data contract. The explicit `const X string = "..."` form matches
 the rest of the codebase and was enough.
+
+## Source with no action skips the parser
+
+`TemplateAdapter.Render` returns its input when the source holds no `{{`,
+without building a `text/template` at all.
+
+A `TemplateRef` carries its name and its output path as templates, so `render`
+makes three renderer calls per ref and only the third is a template file. Nearly
+all of the other two are literal strings — 28 of the registry's 31 `Name` values
+contain no action, and `setup` alone renders 14 static names and 9 static paths.
+Each was paying a `template.New`, a `Funcs` copy of the whole func map with a
+`reflect.ValueOf` per entry, an `Option` string parse, a copy of the source, and
+a full lex and parse, to hand back a constant. That is 21 ns instead of 2.0 µs
+per call, and a quarter of what `gopher generate setup` cost.
+
+It is safe because the renderer never calls `Delims`, so `{{` is the only
+sequence that can open an action, `}}` outside one is literal text, and
+`missingkey=error` cannot fire where there are no keys. `BenchmarkTemplateRender`
+carries a `static` case so the two paths stay visible against each other.
+
+**Not a template cache.** Caching parsed templates is the obvious next idea and
+it is rejected in [testing.md](testing.md): within one invocation every template
+string is distinct, so the hit rate is ~0% in the run a user gets and ~100% in a
+benchmark that reuses a generator. This is the opposite shape — it removes work
+rather than remembering it, so it shows up in `BenchmarkGenerateCold`.
+
+## Override directories are resolved once per process
+
+`NewStoreAdapter` stats each override directory and drops the ones that are
+absent, instead of `Load` rediscovering them on every lookup.
+
+`Config.TemplateDirs` always appends the user template directory whether or not
+it exists, so the usual configuration carries two directories and no overrides.
+Every `Load` was opening a path under each of them and taking `ENOENT`:
+`gopher generate setup` spent 28 failed reads finding out the same thing 14
+times. The lookup went from 3.3 µs to 231 ns, which is what the embedded read
+alone costs.
+
+Only directories that are definitively missing are dropped, so a path that
+exists but is not a directory still fails at the first `Load` exactly as before.
+Deciding existence once assumes a directory does not appear mid run, which holds
+because gopher is one short lived process per invocation. `walkDir` already
+guarded itself this way; this extends the same assumption to the read path.
+
+`FsAdapter.Write` skips `MkdirAll` for a directory it already created, on the
+same reasoning and with the same limit: the state is per adapter and is not safe
+to share across goroutines.
+
+**Rejected:** growing the render buffer to the source length up front. It is
+worth 6% on the largest template in isolation and nothing end to end — 1.5% on
+`BenchmarkGenerateCold/setup`, inside the noise floor — because formatting, not
+execution, is what a generate spends its time on. It also over-allocates for
+small templates whose output is shorter than their source.

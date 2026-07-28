@@ -53,24 +53,52 @@ type StoreAdapter struct {
 
 // NewStoreAdapter creates an adapter that resolves templates from the override
 // directories first and falls back to the embedded defaults
+//
+// Directories that do not exist are dropped from the chain here rather than
+// rediscovered on every lookup. The user template directory is always
+// configured and usually absent, so Load would otherwise pay a failed read for
+// it on every template it resolves. Only definitively missing directories are
+// dropped, so a path that exists but is not a directory still fails the way it
+// did before, at the first Load
+//
+// This decides existence once per process. gopher runs as one short lived
+// process per invocation, so a directory appearing mid run is not a case that
+// arises
 func NewStoreAdapter(embedded fs.FS, root string, opts ...StoreOpt) *StoreAdapter {
 	adapter := &StoreAdapter{
 		embedded: embedded,
 		root:     root,
-		dirs:     make([]string, 0, 2),
+		dirs:     make([]string, 0, 3),
 	}
 
 	for _, opt := range opts {
 		opt(adapter)
 	}
 
+	present := adapter.dirs[:0]
+
+	for i := range adapter.dirs {
+		if _, err := os.Stat(adapter.dirs[i]); err == nil || !os.IsNotExist(err) {
+			present = append(present, adapter.dirs[i])
+		}
+	}
+
+	adapter.dirs = present
+
 	return adapter
+}
+
+// override returns the path the named template occupies inside an override
+// directory. Load and Origin resolve the same chain, one by reading and one by
+// stat'ing, so the path arithmetic lives here
+func (a *StoreAdapter) override(dir string, name string) string {
+	return filepath.Join(dir, filepath.FromSlash(name)+TemplateExt)
 }
 
 // Load returns the source of the named template
 func (a *StoreAdapter) Load(name string) ([]byte, error) {
 	for i := range a.dirs {
-		override := filepath.Join(a.dirs[i], filepath.FromSlash(name)+TemplateExt)
+		override := a.override(a.dirs[i], name)
 
 		data, err := os.ReadFile(override)
 		if err == nil {
@@ -187,7 +215,7 @@ func (a *StoreAdapter) walkDir(dir string) ([]string, error) {
 // from an override rather than the embedded defaults
 func (a *StoreAdapter) Origin(name string) (string, bool) {
 	for i := range a.dirs {
-		override := filepath.Join(a.dirs[i], filepath.FromSlash(name)+TemplateExt)
+		override := a.override(a.dirs[i], name)
 
 		if _, err := os.Stat(override); err == nil {
 			return override, true
