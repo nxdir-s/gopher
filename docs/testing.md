@@ -8,6 +8,7 @@ is that most templates are checked for syntax, not for types.
 go test ./...                          # everything
 go test -short ./...                   # skips the compile checks (they shell out to go build)
 GOPHER_UPDATE_GOLDEN=1 go test ./...   # refresh the golden files
+make bench                             # benchmarks, which no test run touches
 ```
 
 ## The layers
@@ -20,6 +21,7 @@ GOPHER_UPDATE_GOLDEN=1 go test ./...   # refresh the golden files
 | Domain | `internal/core/domain/generator_test.go`, `catalog_test.go` | the engine against in-memory fakes |
 | Golden | `internal/core/domain/golden_test.go` | every template's rendered output, byte for byte |
 | Compile | `internal/core/domain/compile_test.go` | generated code actually type-checks |
+| Bench | `internal/adapters/bench_test.go`, `cli_bench_test.go`, `internal/core/domain/bench_test.go`, `internal/config/bench_test.go`, `cmd/gopher/bench_test.go` | what the pipeline costs, per layer |
 
 ## Golden files
 
@@ -119,6 +121,124 @@ Domain tests build a generator two ways:
 
 Reach for the first when testing the *engine*, the second when testing
 *templates*.
+
+## Benchmarks
+
+Benchmarks measure, they do not assert. Nothing fails on a slow number and no
+baseline is checked in — the comparison is something you run deliberately,
+against a run you captured yourself.
+
+```bash
+make bench                                  # everything, -benchmem, tests skipped
+make bench-quick                            # -benchtime 10x, proves they still run
+make bench BENCH=Generate                   # one selector
+make bench BENCH=Generate BENCHFLAGS='-count 10'
+```
+
+The target pins `-run '^$'`. Without it `go test -bench` runs the whole suite,
+compile checks included, before the first benchmark.
+
+### The rule for reading them
+
+**An optimization is only real if it moves `BenchmarkGenerateCold`.**
+
+Nothing caches a parsed template, and the obvious fix is to add a cache. But
+within a single invocation every template string the renderer sees is distinct —
+`setup` performs 42 parses across 14 refs and repeats none of them. A cache keyed
+by template text has a ~0% hit rate for one process, and a ~100% hit rate in a
+benchmark that reuses one generator across thousands of iterations.
+
+So the two exist as a pair:
+
+| | Generator built | Reports |
+|---|---|---|
+| `BenchmarkGenerate` | once, before the loop | steady state, flattered by anything that warms up |
+| `BenchmarkGenerateCold` | inside the loop | what one `gopher generate` costs |
+
+A change that improves the first and not the second has improved nothing a user
+will ever run.
+
+### The layers
+
+| Selector | Covers |
+|---|---|
+| `Template`, `Format`, `Store`, `GoSource` | the adapters, individually. `TemplateParse` and `TemplateExecute` split `Render` in half |
+| `NewNaming`, `ParseFields` | the value-object derivations templates call per name |
+| `Generate`, `TemplateData`, `RegistrySpec` | the pipeline end to end, through the in-memory writer |
+| `CliRun` | argv to `Request`, with a generator stub in place |
+| `Load`, `FindModule`, `Run`, `Startup` | config resolution and startup, in and out of process |
+
+Everything writes to an in-memory `fake.Writer` except `GenerateDisk`, `FsWrite`
+and `Startup`, which are the only three that touch the disk or spawn a process —
+`make bench BENCH='Disk|Fs|Startup'` selects exactly that set.
+
+`BenchmarkStartup` is a budget, not a target: process spawn is milliseconds and
+dwarfs a generate measured in microseconds. It is useful for two subtractions —
+`generate_entity` minus `version` gives the generate delta at process scale, and
+`BenchmarkStartup/version` minus `BenchmarkRun/version` gives the spawn overhead
+that is not gopher's to fix.
+
+### Comparing runs
+
+`benchstat` is run straight from the module proxy. Adding it to `go.mod` would
+cost the zero-dependency property for a tool that never ships in the binary.
+
+```bash
+make bench BENCHFLAGS='-count 10' > old.out
+# ... make the change ...
+make bench BENCHFLAGS='-count 10' > new.out
+go run golang.org/x/perf/cmd/benchstat@latest old.out new.out
+```
+
+`-count 10` is not optional. Below six samples benchstat prints `± ∞` and
+refuses to give a confidence interval at all. Both runs need identical flags,
+which is why `-benchmem` and `-run '^$'` live inside the target rather than in
+the command you type.
+
+`*.out` is already ignored, so neither file is committed.
+
+Calibrate against the machine before trusting a result. Two identical runs of
+the `Generate` set on an M2 Pro land within 1–3.5% of each other, and benchstat
+calls several of those differences significant — a low `p` means the difference
+is consistent, not that it is large enough to care about. Anything under about
+5% is the floor, not a finding. Close everything else, stay plugged in, and run
+it twice against itself first. On macOS, work migrating between performance and
+efficiency cores is the usual cause.
+
+### Adding one
+
+Benchmark names are an API: `benchstat` matches samples by their exact full
+name, so renaming a sub-benchmark orphans every baseline anyone captured. Keep
+the names flat, lowercase, and one `/` deep.
+
+Use `for b.Loop()`, not `for i := 0; i < b.N; i++`. It resets the timer when the
+loop starts, so setup in the same function is already excluded, and it keeps
+arguments and results alive, so no sink variable is needed — which matters here,
+because a package-level sink would break the no-package-level-variables rule in
+[decisions.md](decisions.md).
+
+Watch for state carried between iterations. Requests run with `Stdout` set
+because that returns before the existence check and the write loop, leaving the
+fake writer untouched; `BenchmarkGenerateWrite` sets `Force` instead, because
+otherwise the second iteration hits the clobber check and quietly measures the
+error path. To find a leak, run at two iteration counts and compare — a number
+that drifts more than ~10% depends on how many iterations preceded it.
+
+Give both counts enough iterations to be meaningful. A sub-microsecond
+benchmark like `NewNaming` reads roughly 2x high at `-benchtime 20000x` and
+only settles from about `200000x`, which looks exactly like a leak and is not
+one.
+
+Anything reading config or the store's default directories needs
+`b.Setenv(config.XdgConfigEnv, b.TempDir())`, or the result depends on whether
+the machine happens to have user templates installed.
+
+If you add a request to `benchRequests`, add its artifact count to
+`TestBenchRequestsProduceOutput` in the same file. That test is the only thing
+standing between a benchmark and measuring nothing: a request whose flags drift
+out of step with its spec still generates without error and still reports a
+stable number, it just stops covering what its name says it does. The goldens
+do not help here — they run off a table of their own.
 
 ## Adding a test
 
