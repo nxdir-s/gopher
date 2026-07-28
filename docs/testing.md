@@ -132,6 +132,10 @@ Reach for the first when testing the *engine*, the second when testing
 
 ## Benchmarks
 
+The performance model behind these numbers — where the time actually goes,
+the floors that will not move, and the optimization history — is in
+[performance](performance.md).
+
 Benchmarks measure, they do not assert. Nothing fails on a slow number and no
 baseline is checked in — the comparison is something you run deliberately,
 against a run you captured yourself.
