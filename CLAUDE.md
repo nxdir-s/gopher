@@ -8,7 +8,8 @@ This file is the compressed working brief. `docs/` has the same material with
 the reasoning attached — reach for it when a rule here is not enough:
 [architecture](docs/architecture.md) · [pipeline](docs/pipeline.md) ·
 [templates](docs/templates.md) · [adding a type](docs/adding-a-type.md) ·
-[testing](docs/testing.md) · [decisions](docs/decisions.md).
+[testing](docs/testing.md) · [performance](docs/performance.md) ·
+[decisions](docs/decisions.md).
 
 Keep the two in sync: changing a constraint here means changing it there.
 
