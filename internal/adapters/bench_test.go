@@ -339,7 +339,7 @@ func BenchmarkGoSourceMerge(b *testing.B) {
 	addition := benchSourceAs(b, "port/interface", "ports")
 
 	for b.Loop() {
-		if _, err := source.Merge(existing, addition); err != nil {
+		if _, _, err := source.Merge(existing, addition, "EventPublisher"); err != nil {
 			b.Fatalf("failed to merge: %s", err.Error())
 		}
 	}

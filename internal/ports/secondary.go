@@ -6,7 +6,10 @@ import (
 	"github.com/nxdir-s/gopher/internal/core/valobj"
 )
 
-// FileWriter defines how the core reads and writes generated files
+// FileWriter defines how the core reads and writes generated files. Read
+// reports a missing file with an error satisfying errors.Is(err,
+// fs.ErrNotExist), which is how the append and ensure paths tell "create it"
+// apart from a file that exists but cannot be read
 type FileWriter interface {
 	Write(ctx context.Context, path string, data []byte) error
 	Read(path string) ([]byte, error)
@@ -14,10 +17,10 @@ type FileWriter interface {
 }
 
 // GoSource defines how the core merges generated declarations into existing go
-// source, for the generators that add to a shared file
+// source, for the generators that add to a shared file. Merge reports declared
+// true, with dst unchanged, when dst already declares the name
 type GoSource interface {
-	Declares(src []byte, name string) (bool, error)
-	Merge(dst []byte, src []byte) ([]byte, error)
+	Merge(dst []byte, src []byte, name string) ([]byte, bool, error)
 	Methods(decls []string) ([]valobj.Method, error)
 }
 

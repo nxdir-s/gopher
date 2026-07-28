@@ -57,23 +57,32 @@ func (a *GoSourceAdapter) Declares(src []byte, name string) (bool, error) {
 	return false, nil
 }
 
-// Merge appends the declarations in src to dst, unioning the two import blocks.
-// The result is unformatted, callers pass it through the formatter
-func (a *GoSourceAdapter) Merge(dst []byte, src []byte) ([]byte, error) {
+// Merge appends the declarations in src to dst, unioning the two import
+// blocks — unless dst already declares name at the top level, in which case
+// dst comes back unchanged with declared true, so running the same generator
+// twice never duplicates a declaration. One parse of dst answers both
+// questions. The result is unformatted, callers pass it through the formatter
+func (a *GoSourceAdapter) Merge(dst []byte, src []byte, name string) ([]byte, bool, error) {
 	fset := token.NewFileSet()
 
 	dstFile, err := parser.ParseFile(fset, "dst.go", dst, parser.ParseComments)
 	if err != nil {
-		return nil, &ErrParseSource{err}
+		return nil, false, &ErrParseSource{err}
+	}
+
+	for _, decl := range dstFile.Decls {
+		if declares(decl, name) {
+			return dst, true, nil
+		}
 	}
 
 	srcFile, err := parser.ParseFile(fset, "src.go", src, parser.ParseComments)
 	if err != nil {
-		return nil, &ErrParseSource{err}
+		return nil, false, &ErrParseSource{err}
 	}
 
 	if dstFile.Name.Name != srcFile.Name.Name {
-		return nil, &ErrPackageMismatch{dstFile.Name.Name, srcFile.Name.Name}
+		return nil, false, &ErrPackageMismatch{dstFile.Name.Name, srcFile.Name.Name}
 	}
 
 	imports := make(map[string]struct{}, len(dstFile.Imports)+len(srcFile.Imports))
@@ -105,7 +114,7 @@ func (a *GoSourceAdapter) Merge(dst []byte, src []byte) ([]byte, error) {
 	merged.WriteString(body(fset, srcFile, src))
 	merged.WriteString("\n")
 
-	return []byte(merged.String()), nil
+	return []byte(merged.String()), false, nil
 }
 
 // Methods parses interface method declarations into a form templates can

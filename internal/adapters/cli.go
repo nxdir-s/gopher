@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -198,9 +199,7 @@ func (a *CliAdapter) generate(ctx context.Context, args []string) int {
 	dryRun := set.Bool(DryRunFlag, false, a.usageFor(DryRunFlag))
 	stdout := set.Bool(StdoutFlag, false, a.usageFor(StdoutFlag))
 
-	strs := make(map[string]*string, len(spec.Flags))
-	bools := make(map[string]*bool, len(spec.Flags))
-	lists := make(map[string]*listValue, len(spec.Flags))
+	bindings := make([]flagBinding, 0, len(spec.Flags))
 
 	for i := range spec.Flags {
 		flagSpec := spec.Flags[i]
@@ -216,16 +215,19 @@ func (a *CliAdapter) generate(ctx context.Context, args []string) int {
 			value = configured
 		}
 
+		binding := flagBinding{name: flagSpec.Name}
+
 		switch flagSpec.Type {
 		case entity.FlagBool:
-			bools[flagSpec.Name] = set.Bool(flagSpec.Name, value == entity.BoolTrue, flagSpec.Usage)
+			binding.boolean = set.Bool(flagSpec.Name, value == entity.BoolTrue, flagSpec.Usage)
 		case entity.FlagList:
-			list := &listValue{}
-			set.Var(list, flagSpec.Name, flagSpec.Usage+" (repeatable)")
-			lists[flagSpec.Name] = list
+			binding.list = &listValue{}
+			set.Var(binding.list, flagSpec.Name, flagSpec.Usage+" (repeatable)")
 		default:
-			strs[flagSpec.Name] = set.String(flagSpec.Name, value, flagSpec.Usage)
+			binding.str = set.String(flagSpec.Name, value, flagSpec.Usage)
 		}
+
+		bindings = append(bindings, binding)
 	}
 
 	if err := set.Parse(args[1:]); err != nil {
@@ -248,7 +250,7 @@ func (a *CliAdapter) generate(ctx context.Context, args []string) int {
 	req := &entity.Request{
 		Type:   spec.Type,
 		Flags:  make(map[string]string, len(spec.Flags)),
-		Lists:  make(map[string][]string, len(lists)),
+		Lists:  make(map[string][]string, len(spec.Flags)),
 		OutDir: *out,
 		Module: *module,
 		Force:  *force,
@@ -256,16 +258,15 @@ func (a *CliAdapter) generate(ctx context.Context, args []string) int {
 		Stdout: *stdout,
 	}
 
-	for name, value := range strs {
-		req.Flags[name] = *value
-	}
-
-	for name, value := range bools {
-		req.Flags[name] = strconv.FormatBool(*value)
-	}
-
-	for name, value := range lists {
-		req.Lists[name] = value.values
+	for i := range bindings {
+		switch {
+		case bindings[i].str != nil:
+			req.Flags[bindings[i].name] = *bindings[i].str
+		case bindings[i].boolean != nil:
+			req.Flags[bindings[i].name] = strconv.FormatBool(*bindings[i].boolean)
+		case bindings[i].list != nil:
+			req.Lists[bindings[i].name] = bindings[i].list.values
+		}
 	}
 
 	artifacts, err := a.generator.Generate(ctx, req)
@@ -473,15 +474,26 @@ func (a *CliAdapter) lookup(name string) (*entity.GenSpec, int) {
 	return spec, ExitOk
 }
 
-// report prints the outcome of a generation
+// report prints the outcome of a generation. A multi-artifact run buffers its
+// lines into one write syscall; a single artifact is one write either way, so
+// it skips the buffer instead of paying the 4KB it would allocate
 func (a *CliAdapter) report(artifacts []*entity.Artifact, req *entity.Request) {
+	var out io.Writer = a.stdout
+
+	if len(artifacts) > 1 {
+		buffered := bufio.NewWriter(a.stdout)
+		defer buffered.Flush()
+
+		out = buffered
+	}
+
 	if req.Stdout {
 		for i := range artifacts {
 			if len(artifacts) > 1 {
-				fmt.Fprintf(a.stdout, "// %s\n", artifacts[i].Path)
+				fmt.Fprintf(out, "// %s\n", artifacts[i].Path)
 			}
 
-			a.stdout.Write(artifacts[i].Content)
+			out.Write(artifacts[i].Content)
 		}
 
 		return
@@ -489,18 +501,18 @@ func (a *CliAdapter) report(artifacts []*entity.Artifact, req *entity.Request) {
 
 	for i := range artifacts {
 		if req.DryRun {
-			fmt.Fprintf(a.stdout, "would %s %s\n", verb(artifacts[i].Status), artifacts[i].Path)
+			fmt.Fprintf(out, "would %s %s\n", verb(artifacts[i].Status), artifacts[i].Path)
 
 			continue
 		}
 
 		if artifacts[i].Status == entity.StatusCreated {
-			fmt.Fprintf(a.stdout, "%s\n", artifacts[i].Path)
+			fmt.Fprintf(out, "%s\n", artifacts[i].Path)
 
 			continue
 		}
 
-		fmt.Fprintf(a.stdout, "%s %s\n", artifacts[i].Status.String(), artifacts[i].Path)
+		fmt.Fprintf(out, "%s %s\n", artifacts[i].Status.String(), artifacts[i].Path)
 	}
 }
 
@@ -598,6 +610,15 @@ func (a *CliAdapter) usageFor(name string) string {
 	}
 
 	return ""
+}
+
+// flagBinding pairs a spec flag with the pointer the flag set parses into, so
+// the request is filled in one pass instead of through per-type maps
+type flagBinding struct {
+	name    string
+	str     *string
+	boolean *bool
+	list    *listValue
 }
 
 // listValue collects a repeatable flag into a slice

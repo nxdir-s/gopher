@@ -143,6 +143,28 @@ func TestLoadProjectConfigOverridesUserConfig(t *testing.T) {
 	}
 }
 
+// TestLoadSkipsUserConfigWithoutUserDir covers the case where no user config
+// directory resolves at all. Joining an empty dir with the file name yields a
+// bare relative path, so without the guard a stray config.json in the working
+// directory would be read as the user config
+func TestLoadSkipsUserConfigWithoutUserDir(t *testing.T) {
+	t.Setenv(XdgConfigEnv, "")
+	t.Setenv("HOME", "")
+
+	decoy := t.TempDir()
+	writeFile(t, filepath.Join(decoy, UserFileName), `{"module": "github.com/nxdir-s/decoy"}`)
+	t.Chdir(decoy)
+
+	cfg, err := Load(decoy)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err.Error())
+	}
+
+	if cfg.Module == "github.com/nxdir-s/decoy" {
+		t.Error("stray config.json in the working directory was read as user config")
+	}
+}
+
 func TestLoadReportsBrokenConfig(t *testing.T) {
 	root, _ := newProject(t)
 

@@ -2,11 +2,15 @@ package domain
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/nxdir-s/pipelines"
 
 	"github.com/nxdir-s/gopher/internal/core/entity"
 	"github.com/nxdir-s/gopher/internal/core/valobj"
@@ -14,6 +18,12 @@ import (
 )
 
 const GoFileExt string = ".go"
+
+// MaxRenderFan caps the workers rendering create refs. The wall time of a fan
+// is max(total/workers, biggest ref), and the biggest ref is about a third of
+// the total on the widest spec, so a third worker reaches that bound and any
+// more just pay thread wakeups that cost as much as the refs they steal
+const MaxRenderFan int = 3
 
 type ErrMissingFlag struct {
 	name string
@@ -48,6 +58,25 @@ func (e *ErrRenderTemplate) Error() string {
 
 func (e *ErrRenderTemplate) Unwrap() error {
 	return e.err
+}
+
+type ErrRenderRef struct {
+	field string
+	err   error
+}
+
+func (e *ErrRenderRef) Error() string {
+	return "template ref " + e.field + ": " + e.err.Error()
+}
+
+func (e *ErrRenderRef) Unwrap() error {
+	return e.err
+}
+
+type ErrRenderInterrupted struct{}
+
+func (e *ErrRenderInterrupted) Error() string {
+	return "generation stopped before every artifact rendered"
 }
 
 type ErrMergeArtifact struct {
@@ -167,20 +196,9 @@ func (d *Generator) Generate(ctx context.Context, req *entity.Request) ([]*entit
 		return nil, err
 	}
 
-	artifacts := make([]*entity.Artifact, 0, len(spec.Templates))
-
-	for i := range spec.Templates {
-		artifact, err := d.render(spec.Templates[i], data, req)
-		if err != nil {
-			return nil, err
-		}
-
-		// a ref whose output path renders empty is switched off by a flag
-		if artifact == nil {
-			continue
-		}
-
-		artifacts = append(artifacts, artifact)
+	artifacts, err := d.renderAll(ctx, spec, data, req)
+	if err != nil {
+		return nil, err
 	}
 
 	if req.DryRun || req.Stdout {
@@ -209,11 +227,129 @@ func (d *Generator) Generate(ctx context.Context, req *entity.Request) ([]*entit
 			return nil, err
 		}
 
-		d.logger.Debug("wrote artifact",
-			slog.String("path", artifacts[i].Path),
-			slog.String("template", artifacts[i].Template),
-			slog.String("status", artifacts[i].Status.String()),
-		)
+		// building the attrs allocates even when the handler discards them, so
+		// skip it unless debug logging is actually on
+		if d.logger.Enabled(ctx, slog.LevelDebug) {
+			d.logger.Debug("wrote artifact",
+				slog.String("path", artifacts[i].Path),
+				slog.String("template", artifacts[i].Template),
+				slog.String("status", artifacts[i].Status.String()),
+			)
+		}
+	}
+
+	return artifacts, nil
+}
+
+// renderResult carries a rendered artifact back with the ref index it belongs
+// to, since fan-in yields results in completion order
+type renderResult struct {
+	idx      int
+	artifact *entity.Artifact
+	err      error
+}
+
+// renderAll resolves every template ref the spec declares and returns the
+// artifacts in declaration order. Refs that create files share no state, so
+// they render concurrently; append and ensure refs read files on disk and stay
+// on the calling goroutine. A single create ref is not worth the fan
+func (d *Generator) renderAll(ctx context.Context, spec *entity.GenSpec, data *entity.TemplateData, req *entity.Request) ([]*entity.Artifact, error) {
+	creates := 0
+	for i := range spec.Templates {
+		if spec.Templates[i].Mode == entity.ModeCreate {
+			creates++
+		}
+	}
+
+	// the serial path allocates nothing it would not have before the fan existed
+	if creates < 2 {
+		return d.renderSerial(spec, data, req)
+	}
+
+	fan := make([]int, 0, creates)
+	for i := range spec.Templates {
+		if spec.Templates[i].Mode == entity.ModeCreate {
+			fan = append(fan, i)
+		}
+	}
+
+	results := make([]*entity.Artifact, len(spec.Templates))
+	errs := make([]error, len(spec.Templates))
+
+	// every channel gets room for every result so no send ever blocks: workers
+	// keep draining the stream while this goroutine handles the serial refs,
+	// and a blocked send would also blind a worker to cancellation
+	stream := pipelines.StreamSlice(ctx, fan)
+	fanned := pipelines.FanOutBuffer(ctx, len(fan), stream, func(ctx context.Context, idx int) renderResult {
+		artifact, err := d.render(spec.Templates[idx], data, req)
+
+		return renderResult{idx, artifact, err}
+	}, min(MaxRenderFan, runtime.GOMAXPROCS(0), len(fan)))
+	merged := pipelines.FanInBuffer(ctx, len(fan), fanned...)
+
+	for i := range spec.Templates {
+		if spec.Templates[i].Mode == entity.ModeCreate {
+			continue
+		}
+
+		results[i], errs[i] = d.render(spec.Templates[i], data, req)
+	}
+
+	delivered := 0
+	for result := range merged {
+		results[result.idx] = result.artifact
+		errs[result.idx] = result.err
+		delivered++
+	}
+
+	// a canceled context stops the stream before every ref is handed out, and
+	// a ref that never rendered must not be mistaken for one a flag switched off
+	if delivered < len(fan) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		return nil, &ErrRenderInterrupted{}
+	}
+
+	// the serial loop stops at the first failing ref, so the lowest index wins
+	// here too no matter which worker finished first
+	for i := range errs {
+		if errs[i] != nil {
+			return nil, errs[i]
+		}
+	}
+
+	artifacts := make([]*entity.Artifact, 0, len(spec.Templates))
+	for i := range results {
+		// a ref whose output path renders empty is switched off by a flag
+		if results[i] == nil {
+			continue
+		}
+
+		artifacts = append(artifacts, results[i])
+	}
+
+	return artifacts, nil
+}
+
+// renderSerial resolves refs one at a time on the calling goroutine, the path
+// for specs with at most one create ref
+func (d *Generator) renderSerial(spec *entity.GenSpec, data *entity.TemplateData, req *entity.Request) ([]*entity.Artifact, error) {
+	artifacts := make([]*entity.Artifact, 0, len(spec.Templates))
+
+	for i := range spec.Templates {
+		artifact, err := d.render(spec.Templates[i], data, req)
+		if err != nil {
+			return nil, err
+		}
+
+		// a ref whose output path renders empty is switched off by a flag
+		if artifact == nil {
+			continue
+		}
+
+		artifacts = append(artifacts, artifact)
 	}
 
 	return artifacts, nil
@@ -221,63 +357,78 @@ func (d *Generator) Generate(ctx context.Context, req *entity.Request) ([]*entit
 
 // render resolves a template ref and produces the artifact it declares
 func (d *Generator) render(ref entity.TemplateRef, data *entity.TemplateData, req *entity.Request) (*entity.Artifact, error) {
-	name, err := d.renderer.Render("name:"+ref.Name, []byte(ref.Name), data)
+	nameBytes, err := d.renderer.Render(ref.Name, []byte(ref.Name), data)
 	if err != nil {
-		return nil, err
+		return nil, &ErrRenderRef{"name", err}
 	}
 
-	out, err := d.renderer.Render("out:"+ref.Out, []byte(ref.Out), data)
+	outBytes, err := d.renderer.Render(ref.Out, []byte(ref.Out), data)
 	if err != nil {
-		return nil, err
+		return nil, &ErrRenderRef{"out", err}
 	}
 
-	if len(strings.TrimSpace(string(out))) == 0 {
+	out := string(outBytes)
+
+	if len(strings.TrimSpace(out)) == 0 {
 		return nil, nil
 	}
 
-	tmpl, err := d.source.Load(string(name))
+	name := string(nameBytes)
+
+	tmpl, err := d.source.Load(name)
 	if err != nil {
 		return nil, err
 	}
 
-	src, err := d.renderer.Render(string(name), tmpl, data)
+	src, err := d.renderer.Render(name, tmpl, data)
 	if err != nil {
 		return nil, err
 	}
 
-	path := filepath.Join(req.OutDir, filepath.FromSlash(string(out)))
+	path := filepath.Join(req.OutDir, filepath.FromSlash(out))
 
 	artifact := &entity.Artifact{
 		Path:     path,
-		Template: string(name),
+		Template: name,
 		Mode:     ref.Mode,
 		Status:   entity.StatusCreated,
 		Content:  src,
 	}
 
-	if ref.Mode == entity.ModeAppend && d.writer.Exists(path) {
-		if err := d.merge(artifact, data); err != nil {
-			return nil, err
-		}
+	if ref.Mode == entity.ModeAppend {
+		existing, err := d.writer.Read(path)
 
-		// a declaration already present makes this a no op and leaves the
-		// content exactly as it sits on disk, so formatting it would pay a parse
-		// and a print to produce a result the write loop then skips
-		if artifact.Status == entity.StatusUnchanged {
-			return artifact, nil
+		switch {
+		case err == nil:
+			if err := d.merge(artifact, existing, data); err != nil {
+				return nil, err
+			}
+
+			// a declaration already present makes this a no op and leaves the
+			// content exactly as it sits on disk, so formatting it would pay a
+			// parse and a print to produce a result the write loop then skips
+			if artifact.Status == entity.StatusUnchanged {
+				return artifact, nil
+			}
+		case !errors.Is(err, fs.ErrNotExist):
+			// an existing but unreadable file must not fall through to the
+			// create path and get clobbered
+			return nil, err
 		}
 	}
 
-	if ref.Mode == entity.ModeEnsure && !req.Force && d.writer.Exists(path) {
+	if ref.Mode == entity.ModeEnsure && !req.Force {
 		existing, err := d.writer.Read(path)
-		if err != nil {
+
+		switch {
+		case err == nil:
+			artifact.Status = entity.StatusUnchanged
+			artifact.Content = existing
+
+			return artifact, nil
+		case !errors.Is(err, fs.ErrNotExist):
 			return nil, err
 		}
-
-		artifact.Status = entity.StatusUnchanged
-		artifact.Content = existing
-
-		return artifact, nil
 	}
 
 	if !strings.HasSuffix(path, GoFileExt) {
@@ -286,7 +437,7 @@ func (d *Generator) render(ref entity.TemplateRef, data *entity.TemplateData, re
 
 	formatted, err := d.formatter.Format(artifact.Content)
 	if err != nil {
-		return nil, &ErrRenderTemplate{string(name), err}
+		return nil, &ErrRenderTemplate{name, err}
 	}
 
 	artifact.Content = formatted
@@ -294,16 +445,11 @@ func (d *Generator) render(ref entity.TemplateRef, data *entity.TemplateData, re
 	return artifact, nil
 }
 
-// merge folds the rendered declarations into the file already on disk. A
+// merge folds the rendered declarations into the bytes already on disk. A
 // declaration that is already present makes the artifact a no op, so running
 // the same generator twice never duplicates it
-func (d *Generator) merge(artifact *entity.Artifact, data *entity.TemplateData) error {
-	existing, err := d.writer.Read(artifact.Path)
-	if err != nil {
-		return err
-	}
-
-	declared, err := d.merger.Declares(existing, data.Name.Pascal)
+func (d *Generator) merge(artifact *entity.Artifact, existing []byte, data *entity.TemplateData) error {
+	merged, declared, err := d.merger.Merge(existing, artifact.Content, data.Name.Pascal)
 	if err != nil {
 		return &ErrMergeArtifact{artifact.Path, err}
 	}
@@ -313,11 +459,6 @@ func (d *Generator) merge(artifact *entity.Artifact, data *entity.TemplateData) 
 		artifact.Content = existing
 
 		return nil
-	}
-
-	merged, err := d.merger.Merge(existing, artifact.Content)
-	if err != nil {
-		return &ErrMergeArtifact{artifact.Path, err}
 	}
 
 	artifact.Status = entity.StatusAppended

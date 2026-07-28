@@ -121,7 +121,9 @@ func (d *Catalog) Init(ctx context.Context, dir string, force bool) (*entity.Ini
 			return nil, err
 		}
 
-		d.logger.Debug("exported template", slog.String("path", path))
+		if d.logger.Enabled(ctx, slog.LevelDebug) {
+			d.logger.Debug("exported template", slog.String("path", path))
+		}
 
 		result.Written = append(result.Written, path)
 	}

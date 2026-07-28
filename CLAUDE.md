@@ -14,7 +14,9 @@ Keep the two in sync: changing a constraint here means changing it there.
 
 ## Hard constraints
 
-- **Zero dependencies.** The `require` block in `go.mod` stays empty. Standard
+- **Zero third-party dependencies, one first-party exception.** The `require`
+  block in `go.mod` holds exactly `github.com/nxdir-s/pipelines` — first-party,
+  stdlib-only, dependency-free — and nothing else, ever. Otherwise standard
   library only: `text/template`, `go/format`, `go/parser`, `embed`,
   `encoding/json`, `log/slog`, `flag`. Third-party imports that appear inside
   `templates/` belong to *generated* code, not to gopher.
@@ -43,11 +45,12 @@ Every generatable type is one `entity.GenSpec` in
 `internal/core/domain/registry.go`. That declaration drives three things: CLI
 flag registration, the `describe` output, and template selection at render time.
 
-**Adding a type means adding a registry entry and a template — nothing else.**
-If a change requires touching `internal/adapters/cli.go` to support a new type,
-the abstraction is being worked around; fix the registry instead.
+**Adding a type means adding a spec constructor, a `specFor` case, a
+`genTypes` entry, and a template — nothing else.** If a change requires
+touching `internal/adapters/cli.go` to support a new type, the abstraction is
+being worked around; fix the registry instead.
 
-Two mechanisms worth knowing:
+Four mechanisms worth knowing:
 
 - A `TemplateRef` whose `Out` renders to an empty string is skipped. That is how
   `setup` switches `go.mod`/`Makefile`/`CLAUDE.md` on and off from a flag.
@@ -60,6 +63,10 @@ Two mechanisms worth knowing:
   that the caller then edits — `adapter -kind http` uses it for the
   `entity.Request`/`valobj.Method` types the adapter is written against. `-force`
   still regenerates.
+- Create-mode refs render concurrently (`renderAll` in
+  `internal/core/domain/generator.go`); append/ensure refs and specs with fewer
+  than two create refs stay serial. Artifact order and the error reported are
+  deterministic either way — see [pipeline](docs/pipeline.md).
 
 ## Conventions in this codebase
 
@@ -78,6 +85,8 @@ stay consistent.
 
 - `go test ./...` — golden files, unit tests, and compile checks
 - `go test -short ./...` — skips the compile checks, which shell out to `go build`
+- `go test -race ./internal/core/domain/ ./internal/adapters/` — required after
+  changes to the generator's fanned rendering or the adapters it drives
 - `GOPHER_UPDATE_GOLDEN=1 go test ./...` — refresh the golden files. An
   environment variable rather than a `-update` flag so a repo-wide refresh works
   in packages that do not define the flag.

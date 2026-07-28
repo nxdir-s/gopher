@@ -4,6 +4,7 @@ package fake
 
 import (
 	"context"
+	"io/fs"
 	"sort"
 )
 
@@ -25,6 +26,12 @@ type ErrFileNotFound struct {
 
 func (e *ErrFileNotFound) Error() string {
 	return "file not found: " + e.path
+}
+
+// Unwrap satisfies the ports.FileWriter contract: a missing file reads as
+// fs.ErrNotExist through errors.Is
+func (e *ErrFileNotFound) Unwrap() error {
+	return fs.ErrNotExist
 }
 
 // Store is an in memory ports.TemplateSource

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -46,6 +47,10 @@ type Config struct {
 	Defaults    map[string]string `json:"defaults,omitempty"`
 
 	root string
+
+	// userDir is resolved once during Load; UserDir reads the environment on
+	// every call and Load and TemplateDirs both need the answer
+	userDir string
 }
 
 // Load resolves the configuration for the supplied working directory. Project
@@ -56,8 +61,14 @@ func Load(dir string) (*Config, error) {
 		Defaults: make(map[string]string),
 	}
 
-	if err := cfg.merge(filepath.Join(UserDir(), UserFileName)); err != nil {
-		return nil, err
+	cfg.userDir = UserDir()
+
+	// an empty user dir would make the join a bare relative path, and merge
+	// would read a stray config.json out of the working directory
+	if len(cfg.userDir) > 0 {
+		if err := cfg.merge(filepath.Join(cfg.userDir, UserFileName)); err != nil {
+			return nil, err
+		}
 	}
 
 	root, moduleRoot := findMarkers(dir)
@@ -95,7 +106,9 @@ func (c *Config) TemplateDirs() []string {
 		dirs = append(dirs, expand(c.TemplateDir))
 	}
 
-	dirs = append(dirs, UserTemplateDir())
+	if len(c.userDir) > 0 {
+		dirs = append(dirs, filepath.Join(c.userDir, TemplateDir))
+	}
 
 	return dirs
 }
@@ -267,26 +280,28 @@ func walkUp(dir string, match func(string) bool) string {
 	}
 }
 
-// parseModule pulls the module path out of a go.mod
+// parseModule pulls the module path out of a go.mod. It walks the bytes as
+// read so the only string built is the path returned
 func parseModule(data []byte) string {
-	rest := string(data)
+	keyword := []byte(ModuleKeyword)
+	rest := data
 
 	for len(rest) > 0 {
-		line, remainder, _ := strings.Cut(rest, "\n")
+		line, remainder, _ := bytes.Cut(rest, []byte{'\n'})
 		rest = remainder
 
-		trimmed := strings.TrimSpace(line)
+		trimmed := bytes.TrimSpace(line)
 
-		if !strings.HasPrefix(trimmed, ModuleKeyword) {
+		if !bytes.HasPrefix(trimmed, keyword) {
 			continue
 		}
 
-		path := strings.TrimSpace(strings.TrimPrefix(trimmed, ModuleKeyword))
-		if len(path) == 0 || strings.HasPrefix(path, "(") {
+		path := bytes.TrimSpace(bytes.TrimPrefix(trimmed, keyword))
+		if len(path) == 0 || path[0] == '(' {
 			continue
 		}
 
-		return strings.Trim(path, `"`)
+		return string(bytes.Trim(path, `"`))
 	}
 
 	return ""

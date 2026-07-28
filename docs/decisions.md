@@ -7,18 +7,24 @@ deliberate and are easy to undo by accident.
 
 ---
 
-## Zero dependencies
+## Zero dependencies, one first-party exception
 
-`go.mod` has an empty `require` block, and it stays that way. Everything runs on
-`text/template`, `go/format`, `go/parser`, `embed`, `encoding/json`, `log/slog`,
-and `flag`.
+`go.mod` requires exactly one module — `github.com/nxdir-s/pipelines`, the
+first-party fan-out/fan-in helpers behind concurrent rendering — and nothing
+else, ever. It is MIT, stdlib-only, and has no dependencies of its own, so the
+transitive closure of gopher is still gopher. Everything else runs on
+`text/template`, `go/format`, `go/parser`, `embed`, `encoding/json`,
+`log/slog`, and `flag`.
 
 gopher is a developer tool installed with `go install` and invoked by an agent in
-a loop. A single self-contained binary with nothing to resolve is worth real
-constraints.
+a loop. A single self-contained binary with nothing external to resolve is worth
+real constraints, and a first-party leaf module preserves that property.
 
 **Rejected:** `urfave/cli` and `spf13/cobra` for the CLI, `go-toml/v2` for
-config.
+config — third-party trees with real transitive closures. Also rejected:
+copying the fan-out/fan-in shapes into gopher to keep the `require` block
+empty. They are maintained and tested once in `pipelines`; duplicating them
+here trades one require line for silent drift between the copies.
 
 **Consequences:** config is JSON rather than TOML, despite `spec.md` showing a
 `TomlAdapter` — that adapter is a *template*, and templates' dependencies belong
@@ -175,8 +181,8 @@ would be easy to drop.
 
 ## No package-level variables
 
-The `require` block is not the only thing kept empty — so is the set of package
-level `var`s. Two remain, both mandated:
+Like the dependency list, the set of package-level `var`s is kept as close to
+empty as the toolchain allows. Two remain, both mandated:
 
 - `templates.FS`, because `//go:embed` can only target a package-level variable
 - `main.Version`, because `-ldflags -X` can only write to one
@@ -187,10 +193,11 @@ ambiently.
 Everything else became a function. The lookup tables backing `String()` and
 `ParseGenType` are `switch` statements, since a value type's method has nowhere
 to inject a table. `AdapterKinds` and friends return a fresh slice per call
-rather than exposing a mutable exported one. `specs` became `defaultSpecs()`, so
-each `Registry` owns its own `*entity.GenSpec` pointers — previously every
-registry shared one backing array, and a write through `Registry.Spec()` would
-have leaked into every other registry in the process.
+rather than exposing a mutable exported one. `specs` became per-type
+constructors behind `specFor`, so each `Registry` builds its own
+`*entity.GenSpec` pointers — previously every registry shared one backing
+array, and a write through `Registry.Spec()` would have leaked into every other
+registry in the process.
 
 **Rejected:** leaving the read-only tables alone because "they are never
 written." True today, but the guarantee costs nothing to make structural, and a
@@ -291,3 +298,156 @@ worth 6% on the largest template in isolation and nothing end to end — 1.5% on
 `BenchmarkGenerateCold/setup`, inside the noise floor — because formatting, not
 execution, is what a generate spends its time on. It also over-allocates for
 small templates whose output is shorter than their source.
+
+## Create refs render concurrently
+
+`go/format` is roughly 80% of what a generate spends its CPU on and runs once
+per `.go` artifact, independently per file. `renderAll` in
+`internal/core/domain/generator.go` therefore fans create-mode refs across
+`min(MaxRenderFan, GOMAXPROCS, refs)` workers with `pipelines.FanOutBuffer`
+and places results back by ref index. The rules that keep it observably
+identical to the serial loop it replaced:
+
+- **Append and ensure refs stay on the calling goroutine.** They read and
+  merge files on disk, and `fake.Writer` and `FsAdapter`'s `MkdirAll` memo are
+  not goroutine-safe on purpose.
+- **Fewer than two create refs takes the serial path.** `entity`, every
+  `adapter` kind, and `port` stay byte-for-byte on the old loop, so the floor
+  cases pay no goroutine overhead — and a single-file `adapter` generate could
+  not benefit anyway, since one `format.Source` over one big file is its whole
+  cost and cannot be split.
+- **The lowest-index error wins.** The serial loop stopped at the first
+  failing ref, so scanning the collected errors in declaration order
+  reproduces the same error no matter which worker finished first. Refs after
+  a failing one now render before the abort; create-ref rendering has no side
+  effects, so nothing observes the difference.
+- **No send may ever block.** The workers' send sits in a `select` `default`
+  branch, so a blocked send would blind a worker to cancellation. Buffers are
+  sized to hold every result, which also keeps the fan draining while the
+  calling goroutine handles the serial refs.
+- **A canceled context surfaces as its error.** Cancellation can stop the
+  stream before every ref is handed out, and a ref that never rendered must
+  not be mistaken for one a flag switched off. `renderAll` counts deliveries
+  and returns `ctx.Err()` on a shortfall.
+
+**Rejected:** fanning the write loop as well — the report order is part of the
+interface, the `MkdirAll` memo is a plain map, and writes are a fraction of
+render cost.
+
+**Rejected, measured:** a fan as wide as the machine. `min(GOMAXPROCS, refs)`
+— ten workers on an M2 Pro — made `BenchmarkGenerateCold/setup` 9.7% *slower*
+than the serial loop (213µs → 234µs), and its profile was 81% scheduler
+wakeups (`usleep`, `pthread_cond_wait/signal`, `stealWork`) at 347% CPU. The
+refs are 5–70µs of work each; waking a parked thread costs about as much as
+the ref it comes to steal. A fan's wall time is `max(total/workers, biggest
+ref)`, and on the widest spec the biggest ref is about a third of the total,
+so `MaxRenderFan = 3` reaches that bound: 159µs against 174µs at two workers,
+172µs at four, and 234µs at ten.
+
+## Specs are built one type at a time
+
+A real invocation resolves exactly one spec, but every process built all
+eleven — about 5.6KB and a fifth of `BenchmarkGenerateCold/entity`'s
+allocations spent on specs nobody asked for. `Registry.Spec` now builds the
+requested type through `specFor` on first use and caches the pointer per
+registry; `Specs()` materializes the full table in `genTypes` order through
+the same cache, so `list` and `describe` see the same order and the same
+pointers as before. `WithSpecs` bypasses laziness entirely, which keeps every
+fake-spec test on the old resolve-against-a-slice path. The registry stays
+single-goroutine — rendering fans out, spec resolution never does — so the
+cache needs no lock.
+
+The four `-kind`/`-side` usage strings that were joined from the kind lists on
+every construction are now compile-time consts, with
+`TestKindUsageStringsMatchKinds` pinning each to its list so a new kind cannot
+be advertised in one place and not the other.
+
+**Cost accepted:** adding a type is now three touchpoints in `registry.go` —
+constructor, `specFor` case, `genTypes` entry — instead of one slice entry.
+`TestSpecsCanonicalOrder` fails loudly when they drift.
+
+## Commands wire only what they use
+
+`run()` used to build the entire hexagon — config load and go.mod read, three
+store stats, the renderer's FuncMap, generator, catalog — before looking at
+`args[0]`, so `gopher version` paid for all of it and a malformed config file
+broke every command including `help`. Dispatch now happens first: `version`,
+`list`, `describe`, `help`, and usage errors get a cli wired with only the
+registry (nil generator, catalog, and config), `templates` adds the store and
+catalog, and only `generate` builds everything.
+`TestRunFastPathsNeedOnlyRegistry` drives every fast path against those nils,
+so a future edit that reaches for one panics in the test, not in a terminal.
+Deliberate behavior change riding along: a broken config no longer fails
+`version`/`list`/`describe`/`help` — they never read it.
+
+Smaller cuts in the same pass: `parseModule` walks the go.mod bytes instead of
+copying the file into a string; the user config dir is resolved once per
+`Load` instead of once per caller; the generate flag values land in the
+request through one binding slice instead of three pointer maps materialized
+twice; and `report` buffers a multi-artifact run into one write syscall.
+Buffering unconditionally was tried first and backed out: a single-artifact
+generate — the common case — paid a 4KB buffer (+18% on
+`BenchmarkCliRun/generate_full`) to batch one line, so the buffer is gated on
+having more than one artifact to print.
+
+## The append path parses the existing file once
+
+`generate port` against an existing ports file used to parse Go source four
+times: `Declares(existing)`, then `Merge(existing, new)` re-parsing the same
+bytes, plus the rendered source and the final `format.Source`. The declares
+scan now rides inside `Merge(dst, src, name)` on the one parse of `dst`, and
+the port's contract reports `declared` back instead of being asked twice.
+`Declares` survives as an exported adapter method so its benchmark keeps
+measuring the scan.
+
+In the same change the append and ensure paths dropped their `Exists` calls:
+existence is resolved by the `Read` they were about to do anyway, with a
+missing file reported as `fs.ErrNotExist` through the `ports.FileWriter`
+contract (`ErrReadFile` and the fake's error both unwrap to it). Deliberate
+behavior fix riding along: `Exists` treated *any* stat failure as "absent", so
+an existing but unreadable file was routed down the create path and clobbered;
+read-first makes it the hard error it should have been.
+
+## Rejected: string-typed template ports
+
+`embed.FS.ReadFile` copies the template body, and `string(tmpl)` at the parse
+site copies it again, so retyping `TemplateSource.Load` and `Renderer.Render`
+to `string` looks like a free copy removed. Analyzed and rejected on paper:
+it saves one copy on the parse path only (~1–2µs of the 780µs aws generate,
+2–3% of alloc space), while the override path still copies (`os.ReadFile` to
+string), the action-free fast path still copies into `Artifact.Content`, and
+execution buffer growth — the actual allocation cost of rendering — is
+untouched. Inside the noise floor on every Cold label, priced at a signature
+ripple across two ports, the store, the renderer, the fakes, and every
+adapter test.
+
+## Rejected: a FuncMap prototype cloned per render
+
+The idea: `Funcs(a.funcs)` re-registers eight functions through
+`reflect.ValueOf` on every parsed template, so build one prototype template in
+the constructor and `Clone()` it per render instead. Measured on
+`BenchmarkTemplateRender` with `-count 10`: the small ref templates gained
+3–4.7%, the large bodies were flat to 1.8% *worse*, and every parsing label
+gained an allocation (+1.5% B/op on the refs) — `Clone` copies both func maps
+and its bookkeeping costs more than the reflection it avoids. Under the 10%
+pre-gate it never reached a full-suite run. Closed; the shared-prototype
+variant without Clone is off the table permanently because parsing into a
+group that is concurrently executing races, and the fan in `renderAll` does
+exactly that.
+
+## Ref render failures carry the field, not a synthetic name
+
+`render` used to prefix a ref's name and output-path templates with `name:` /
+`out:` so their errors stayed distinguishable, paying two string concats per
+ref on the happy path for labels only ever read inside an error message.
+`ErrRenderRef` now wraps those failures with the field name, built only in the
+error branch. Error text changed shape: what read
+`failed to parse template 'out:{{...}}'` now reads
+`template ref out: failed to parse template '{{...}}'`.
+
+## Debug attrs are built only when debug is on
+
+`slog` checks the level inside `Logger.Debug`, after the caller has already
+built the attrs. The per-artifact write log and the catalog's per-template
+export log now sit behind `logger.Enabled`, which costs a branch and saves
+three attrs and a variadic slice per artifact at the default warn level.

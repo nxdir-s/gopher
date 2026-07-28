@@ -1,7 +1,8 @@
 # The generation pipeline
 
-Everything `gopher generate` does lives in `Generate` and `render` in
-`internal/core/domain/generator.go`. This is that path, stage by stage.
+Everything `gopher generate` does lives in `Generate`, `renderAll`, and
+`render` in `internal/core/domain/generator.go`. This is that path, stage by
+stage.
 
 ```mermaid
 flowchart TD
@@ -11,7 +12,7 @@ flowchart TD
     D --> E["Registry.Spec<br/>resolve the type"]
     E --> F["validateFlags<br/>required flags · RequiresModule"]
     F --> G["templateData<br/>materialize every declared flag"]
-    G --> H{"for each<br/>TemplateRef"}
+    G --> H{"for each TemplateRef<br/><i>create refs fan out</i>"}
 
     H --> I["render Name and Out<br/><i>they are templates too</i>"]
     I --> J{"Out empty?"}
@@ -85,6 +86,19 @@ them is written, so a partially-written tree is not left behind. It skips
 non-`ModeCreate` artifacts, which resolve existence themselves. The write loop
 then skips anything marked `StatusUnchanged`.
 
+## Concurrency
+
+Stages 4–7 run once per ref, and for create-mode refs they share no state, so
+`renderAll` fans them across `min(MaxRenderFan, GOMAXPROCS, refs)` workers
+when a spec has two or more. Everything observable is unchanged: results come back tagged with
+their ref index, so artifact order, report order, and the goldens match the
+serial loop; the error returned is the lowest-index failure, the same one the
+serial loop would have stopped at. Append and ensure refs read files on disk
+and stay on the calling goroutine, and specs with fewer than two create refs
+(`entity`, every `adapter` kind, `port`) never leave the serial path. The
+reasoning, including why the fan cannot help a single-file `adapter` generate,
+is in [decisions](decisions.md).
+
 ## Artifact modes
 
 Set per `TemplateRef` via `Mode`. This is the piece most likely to be gotten
@@ -101,10 +115,18 @@ wrong, because two of the three modes look interchangeable and are not.
 package clause + unioned import block (stdlib grouped first) + existing
 declarations + new ones, then it is reformatted.
 
-Its idempotency check is `Declares(existing, data.Name.Pascal)` — it looks for a
-declaration named after the **`-name` flag**. That makes it correct for `port`,
-where `-name OrderRepository` produces `type OrderRepository interface`, and
-wrong for anything whose declarations are not named after `-name`.
+Its idempotency check rides inside `Merge(existing, rendered,
+data.Name.Pascal)` — one parse of the existing file both looks for a
+declaration named after the **`-name` flag** and, when it is absent, feeds the
+append. A declared name short-circuits to `unchanged` with the file's bytes
+untouched. That makes it correct for `port`, where `-name OrderRepository`
+produces `type OrderRepository interface`, and wrong for anything whose
+declarations are not named after `-name`.
+
+Both append and ensure resolve existence by reading: a missing file reports
+`fs.ErrNotExist` through the `ports.FileWriter` contract and falls through to
+the create path, while a file that exists but cannot be read is a hard error —
+it must not be silently clobbered.
 
 **`ModeEnsure`** exists because of exactly that limitation. The http companions
 live at fixed paths (`internal/core/entity/request.go`) independent of `-name`,

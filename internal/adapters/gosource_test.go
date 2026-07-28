@@ -28,7 +28,7 @@ type EventPublisher interface {
 }
 `
 
-	merged, err := NewGoSourceAdapter().Merge([]byte(existingPorts), []byte(addition))
+	merged, _, err := NewGoSourceAdapter().Merge([]byte(existingPorts), []byte(addition), "EventPublisher")
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err.Error())
 	}
@@ -70,7 +70,7 @@ type Publisher interface {
 }
 `
 
-	merged, err := NewGoSourceAdapter().Merge([]byte(dst), []byte(addition))
+	merged, _, err := NewGoSourceAdapter().Merge([]byte(dst), []byte(addition), "Publisher")
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err.Error())
 	}
@@ -99,7 +99,7 @@ type Publisher interface {
 }
 `
 
-	merged, err := NewGoSourceAdapter().Merge([]byte(existingPorts), []byte(addition))
+	merged, _, err := NewGoSourceAdapter().Merge([]byte(existingPorts), []byte(addition), "Publisher")
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err.Error())
 	}
@@ -112,7 +112,7 @@ type Publisher interface {
 func TestMergePreservesHeaderComments(t *testing.T) {
 	dst := "//go:build linux\n\n" + existingPorts
 
-	merged, err := NewGoSourceAdapter().Merge([]byte(dst), []byte("package ports\n\ntype Extra interface{}\n"))
+	merged, _, err := NewGoSourceAdapter().Merge([]byte(dst), []byte("package ports\n\ntype Extra interface{}\n"), "Extra")
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err.Error())
 	}
@@ -123,7 +123,7 @@ func TestMergePreservesHeaderComments(t *testing.T) {
 }
 
 func TestMergeRejectsPackageMismatch(t *testing.T) {
-	_, err := NewGoSourceAdapter().Merge([]byte(existingPorts), []byte("package other\n\ntype Extra interface{}\n"))
+	_, _, err := NewGoSourceAdapter().Merge([]byte(existingPorts), []byte("package other\n\ntype Extra interface{}\n"), "Extra")
 
 	var mismatch *ErrPackageMismatch
 	if !errors.As(err, &mismatch) {
@@ -132,11 +132,28 @@ func TestMergeRejectsPackageMismatch(t *testing.T) {
 }
 
 func TestMergeReportsUnparseableSource(t *testing.T) {
-	_, err := NewGoSourceAdapter().Merge([]byte("package ports\n\nfunc broken( {\n"), []byte(existingPorts))
+	_, _, err := NewGoSourceAdapter().Merge([]byte("package ports\n\nfunc broken( {\n"), []byte(existingPorts), "Extra")
 
 	var parseErr *ErrParseSource
 	if !errors.As(err, &parseErr) {
 		t.Fatalf("expected ErrParseSource, got %v", err)
+	}
+}
+
+// TestMergeDeclaredIsNoOp pins the short-circuit: a dst that already declares
+// the name comes back byte-identical, flagged declared, without src parsing
+func TestMergeDeclaredIsNoOp(t *testing.T) {
+	merged, declared, err := NewGoSourceAdapter().Merge([]byte(existingPorts), []byte("package other\n\ntype OrderRepository interface{}\n"), "OrderRepository")
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err.Error())
+	}
+
+	if !declared {
+		t.Fatal("expected the existing declaration to be reported")
+	}
+
+	if string(merged) != existingPorts {
+		t.Errorf("dst was modified:\n%s", merged)
 	}
 }
 

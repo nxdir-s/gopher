@@ -174,3 +174,84 @@ func TestRegistrySpecLookup(t *testing.T) {
 		t.Error("expected an error for an unregistered type")
 	}
 }
+
+// TestKindUsageStringsMatchKinds pins the compile-time usage strings to the
+// kind lists they name, since the join no longer happens at runtime
+func TestKindUsageStringsMatchKinds(t *testing.T) {
+	tests := map[string]struct {
+		got  string
+		want string
+	}{
+		"adapter": {adapterKindUsage, "adapter kind: " + strings.Join(AdapterKinds(), ", ")},
+		"valobj":  {valobjKindUsage, "value object kind: " + strings.Join(ValobjKinds(), ", ")},
+		"module":  {moduleKindUsage, "module kind: " + strings.Join(ModuleKinds(), ", ")},
+		"side":    {portSideUsage, "which ports file to add to: " + strings.Join(PortSides(), ", ")},
+	}
+
+	for name, tc := range tests {
+		if tc.got != tc.want {
+			t.Errorf("%s usage = %q, want %q", name, tc.got, tc.want)
+		}
+	}
+}
+
+// TestSpecsCanonicalOrder pins Specs to the genTypes order and keeps specFor
+// and genTypes in step: a type listed without a constructor case would be
+// silently skipped here and shrink the count
+func TestSpecsCanonicalOrder(t *testing.T) {
+	specs := NewRegistry().Specs()
+	types := genTypes()
+
+	if len(specs) != len(types) {
+		t.Fatalf("got %d specs for %d types", len(specs), len(types))
+	}
+
+	for i := range types {
+		if specs[i].Type != types[i] {
+			t.Errorf("spec %d = %s, want %s", i, specs[i].Type.String(), types[i].String())
+		}
+	}
+}
+
+// TestSpecPointerIdentity pins that lazy construction hands out one pointer
+// per type per registry, however Spec and Specs calls interleave
+func TestSpecPointerIdentity(t *testing.T) {
+	registry := NewRegistry()
+
+	first, err := registry.Spec(valobj.GenEntity)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err.Error())
+	}
+
+	second, err := registry.Spec(valobj.GenEntity)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err.Error())
+	}
+
+	if first != second {
+		t.Error("two Spec calls returned different pointers")
+	}
+
+	found := false
+	for _, spec := range registry.Specs() {
+		if spec.Type == valobj.GenEntity {
+			found = spec == first
+		}
+	}
+
+	if !found {
+		t.Error("Specs holds a different pointer than Spec handed out")
+	}
+
+	other := NewRegistry()
+	table := other.Specs()
+
+	spec, err := other.Spec(valobj.GenSetup)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err.Error())
+	}
+
+	if spec != table[0] {
+		t.Error("Spec after Specs returned a different pointer")
+	}
+}
