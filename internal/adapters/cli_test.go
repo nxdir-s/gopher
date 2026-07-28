@@ -100,7 +100,7 @@ func testSpec() *entity.GenSpec {
 
 // newTestCli builds a cli over the supplied spec and returns it alongside the
 // buffers it writes to and the generator it drives
-func newTestCli(t *testing.T, spec *entity.GenSpec) (*CliAdapter, *testGenerator, *bytes.Buffer, *bytes.Buffer) {
+func newTestCli(t testing.TB, spec *entity.GenSpec) (*CliAdapter, *testGenerator, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 
 	var stdout, stderr bytes.Buffer

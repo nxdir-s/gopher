@@ -81,6 +81,19 @@ stay consistent.
 - `GOPHER_UPDATE_GOLDEN=1 go test ./...` — refresh the golden files. An
   environment variable rather than a `-update` flag so a repo-wide refresh works
   in packages that do not define the flag.
+- `make bench` / `make bench-quick` — benchmarks. No test run touches them and
+  no baseline is committed.
+
+Benchmarks measure four layers: the adapters, the pipeline, the CLI, and
+startup. **An optimization is only real if it moves `BenchmarkGenerateCold`.**
+Nothing caches a parsed template, but within one invocation every template
+string is distinct — so a cache is ~100% warm in `BenchmarkGenerate`, which
+reuses a generator, and ~0% warm in the run a user actually gets.
+
+Compare runs with `make bench BENCHFLAGS='-count 10' > old.out`, then
+`go run golang.org/x/perf/cmd/benchstat@latest old.out new.out`. It stays a
+`go run` so `go.mod` keeps its empty `require` block. Details, including the
+rules for adding a benchmark, are in [docs/testing.md](docs/testing.md).
 
 Golden files in `internal/core/domain/testdata/` are the regression net for
 template drift. **Read the diff before refreshing them** — an unexpected golden

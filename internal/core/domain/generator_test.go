@@ -21,7 +21,7 @@ type {{.Name.Pascal}}Adapter struct{}
 
 // newTestGenerator builds a generator over the supplied templates and returns it
 // alongside the fake writer it emits to
-func newTestGenerator(t *testing.T, templates map[string]string, spec *entity.GenSpec) (*Generator, *fake.Writer) {
+func newTestGenerator(t testing.TB, templates map[string]string, spec *entity.GenSpec) (*Generator, *fake.Writer) {
 	t.Helper()
 
 	writer := fake.NewWriter()

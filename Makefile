@@ -3,7 +3,11 @@ CMD     := ./cmd/gopher
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.Version=$(VERSION)
 
-.PHONY: build install run test test-short golden vet fmt tidy docs clean
+# benchmark selector and extra flags, ex. make bench BENCH=Generate BENCHFLAGS='-count 10'
+BENCH      ?= .
+BENCHFLAGS ?=
+
+.PHONY: build install run test test-short bench bench-quick golden vet fmt tidy docs clean
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) $(CMD)
@@ -19,6 +23,15 @@ test:
 
 test-short:
 	go test -short ./...
+
+# -run '^$$' matters: without it the whole test suite, compile checks included,
+# runs before the first benchmark
+bench:
+	go test -run '^$$' -bench '$(BENCH)' -benchmem $(BENCHFLAGS) ./...
+
+# proves every benchmark compiles and runs, the timings are meaningless
+bench-quick:
+	go test -run '^$$' -bench '$(BENCH)' -benchmem -benchtime 10x ./...
 
 golden:
 	GOPHER_UPDATE_GOLDEN=1 go test ./...
@@ -49,7 +62,10 @@ docs:
 	done; \
 	for s in ModeCreate ModeAppend ModeEnsure StatusUnchanged StatusAppended TemplateData \
 	         GenSpec TemplateRef RequiresModule splitPositional AdapterKinds ValobjKinds \
-	         ModuleKinds UpdateEnv ErrFileExists ErrNilDependency FindModule; do \
+	         ModuleKinds UpdateEnv ErrFileExists ErrNilDependency FindModule \
+	         BenchmarkGenerate BenchmarkGenerateCold BenchmarkGenerateWrite \
+	         BenchmarkStartup BenchmarkRun XdgConfigEnv \
+	         TestBenchRequestsProduceOutput benchRequests; do \
 		grep -rq "$$s" cmd internal || { echo "STALE SYMBOL: $$s"; fail=1; }; \
 	done; \
 	[ $$fail -eq 0 ] && echo "docs ok"

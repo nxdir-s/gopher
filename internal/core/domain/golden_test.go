@@ -22,7 +22,7 @@ const UpdateEnv string = "GOPHER_UPDATE_GOLDEN"
 
 // newEmbeddedGenerator builds a generator over the real registry and the
 // templates compiled into the binary
-func newEmbeddedGenerator(t *testing.T) *Generator {
+func newEmbeddedGenerator(t testing.TB) *Generator {
 	t.Helper()
 
 	return newEmbeddedGeneratorWith(t, fake.NewWriter())
@@ -30,7 +30,7 @@ func newEmbeddedGenerator(t *testing.T) *Generator {
 
 // newEmbeddedGeneratorWith builds a generator over the real registry and
 // templates, emitting through the supplied writer
-func newEmbeddedGeneratorWith(t *testing.T, writer ports.FileWriter) *Generator {
+func newEmbeddedGeneratorWith(t testing.TB, writer ports.FileWriter) *Generator {
 	t.Helper()
 
 	generator, err := NewGenerator(slog.New(slog.DiscardHandler),
