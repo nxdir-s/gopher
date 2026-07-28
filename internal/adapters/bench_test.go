@@ -21,6 +21,12 @@ const benchRefName string = "adapter/{{.Kind}}"
 // benchRefOut is the ref output path template the generator renders per ref
 const benchRefOut string = "internal/adapters/{{.Name.Snake}}.go"
 
+// benchRefStatic is a ref string holding no action at all. Most of the
+// registry's ref names and output paths are literal like this, so the renderer
+// returns them without parsing and the gap between this case and the two above
+// is what that fast path is worth
+const benchRefStatic string = "internal/adapters/store.go"
+
 // benchData returns the render payload the benchmarks share. Every map key any
 // template indexes is populated because the renderer runs with missingkey=error
 func benchData() *entity.TemplateData {
@@ -122,7 +128,7 @@ func BenchmarkTemplateRender(b *testing.B) {
 	renderer := NewTemplateAdapter()
 	data := benchData()
 
-	refs := map[string]string{"name": benchRefName, "out": benchRefOut}
+	refs := map[string]string{"name": benchRefName, "out": benchRefOut, "static": benchRefStatic}
 
 	for label, src := range refs {
 		tmpl := []byte(src)
@@ -220,7 +226,11 @@ func BenchmarkFormatSource(b *testing.B) {
 
 // BenchmarkStoreLoad measures template lookup. The overrides case is the real
 // production path, since TemplateDirs always appends the user template dir
-// whether or not it exists, so the delta is the cost of the misses
+// whether or not it exists
+//
+// Neither directory here exists, so the constructor drops both and the two
+// cases should report the same number. A gap reopening between them means a
+// failed read is being paid per template again
 func BenchmarkStoreLoad(b *testing.B) {
 	missing := b.TempDir()
 

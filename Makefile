@@ -64,6 +64,7 @@ docs:
 	         GenSpec TemplateRef RequiresModule splitPositional AdapterKinds ValobjKinds \
 	         ModuleKinds UpdateEnv ErrFileExists ErrNilDependency FindModule \
 	         BenchmarkGenerate BenchmarkGenerateCold BenchmarkGenerateWrite \
+	         BenchmarkGenerateOverrides \
 	         BenchmarkStartup BenchmarkRun XdgConfigEnv \
 	         TestBenchRequestsProduceOutput benchRequests; do \
 		grep -rq "$$s" cmd internal || { echo "STALE SYMBOL: $$s"; fail=1; }; \

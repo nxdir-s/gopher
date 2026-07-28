@@ -90,6 +90,13 @@ Nothing caches a parsed template, but within one invocation every template
 string is distinct — so a cache is ~100% warm in `BenchmarkGenerate`, which
 reuses a generator, and ~0% warm in the run a user actually gets.
 
+A change outside the generate path answers to the benchmark that measures it
+instead — `Load` for config resolution, `NewNaming` for the value objects — but
+it does not get to claim a user-visible win on that basis. Report the
+`BenchmarkGenerateCold` number either way. `BenchmarkGenerateOverrides` is the
+one member of the `Generate` family wired the way `config.TemplateDirs` wires a
+real run; the rest build the store with no override directories.
+
 Compare runs with `make bench BENCHFLAGS='-count 10' > old.out`, then
 `go run golang.org/x/perf/cmd/benchstat@latest old.out new.out`. It stays a
 `go run` so `go.mod` keeps its empty `require` block. Details, including the

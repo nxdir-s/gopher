@@ -60,7 +60,9 @@ func Load(dir string) (*Config, error) {
 		return nil, err
 	}
 
-	cfg.root = findRoot(dir)
+	root, moduleRoot := findMarkers(dir)
+
+	cfg.root = root
 
 	if len(cfg.root) > 0 {
 		if err := cfg.merge(filepath.Join(cfg.root, ConfigDirName, ConfigFileName)); err != nil {
@@ -69,7 +71,7 @@ func Load(dir string) (*Config, error) {
 	}
 
 	if len(cfg.Module) == 0 {
-		cfg.Module = findModule(dir)
+		cfg.Module = moduleAt(moduleRoot)
 	}
 
 	return cfg, nil
@@ -168,17 +170,50 @@ func UserTemplateDir() string {
 	return filepath.Join(dir, TemplateDir)
 }
 
-// findRoot walks up looking for a project marker
-func findRoot(dir string) string {
-	return walkUp(dir, func(current string) bool {
-		if _, err := os.Stat(filepath.Join(current, ConfigDirName)); err == nil {
-			return true
+// findMarkers climbs from dir to the filesystem root, reporting the first
+// directory holding a project marker and the first holding a go.mod
+//
+// One walk serves both. The project root is whichever of .gopher or go.mod
+// turns up first, while the module needs the go.mod specifically, so resolving
+// the two separately stat'd go.mod at every level twice. Neither marker stops
+// the climb until both are settled
+func findMarkers(dir string) (string, string) {
+	current, err := filepath.Abs(dir)
+	if err != nil {
+		return "", ""
+	}
+
+	var root string
+	var module string
+
+	for {
+		if len(module) == 0 {
+			if _, err := os.Stat(filepath.Join(current, GoModFile)); err == nil {
+				module = current
+
+				if len(root) == 0 {
+					root = current
+				}
+			}
 		}
 
-		_, err := os.Stat(filepath.Join(current, GoModFile))
+		if len(root) == 0 {
+			if _, err := os.Stat(filepath.Join(current, ConfigDirName)); err == nil {
+				root = current
+			}
+		}
 
-		return err == nil
-	})
+		if len(root) > 0 && len(module) > 0 {
+			return root, module
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return root, module
+		}
+
+		current = parent
+	}
 }
 
 // FindModule returns the module path of the go.mod covering the supplied
@@ -189,12 +224,16 @@ func FindModule(dir string) string {
 
 // findModule walks up looking for a go.mod and returns the module path
 func findModule(dir string) string {
-	root := walkUp(dir, func(current string) bool {
+	return moduleAt(walkUp(dir, func(current string) bool {
 		_, err := os.Stat(filepath.Join(current, GoModFile))
 
 		return err == nil
-	})
+	}))
+}
 
+// moduleAt reads the module path declared by the go.mod in the supplied
+// directory, which is empty when the walk found no module
+func moduleAt(root string) string {
 	if len(root) == 0 {
 		return ""
 	}
@@ -230,10 +269,13 @@ func walkUp(dir string, match func(string) bool) string {
 
 // parseModule pulls the module path out of a go.mod
 func parseModule(data []byte) string {
-	lines := strings.Split(string(data), "\n")
+	rest := string(data)
 
-	for i := range lines {
-		trimmed := strings.TrimSpace(lines[i])
+	for len(rest) > 0 {
+		line, remainder, _ := strings.Cut(rest, "\n")
+		rest = remainder
+
+		trimmed := strings.TrimSpace(line)
 
 		if !strings.HasPrefix(trimmed, ModuleKeyword) {
 			continue

@@ -72,6 +72,39 @@ func TestLoadDetectsModuleFromSubdirectory(t *testing.T) {
 	}
 }
 
+// TestLoadFindsRootAndModuleAtDifferentLevels covers the case where the two
+// markers disagree. A nested .gopher wins the project root while the module
+// still comes from the go.mod above it, so the climb cannot stop at the first
+// marker it meets
+func TestLoadFindsRootAndModuleAtDifferentLevels(t *testing.T) {
+	root, _ := newProject(t)
+
+	nested := filepath.Join(root, "services", "orders")
+	writeFile(t, filepath.Join(nested, ConfigDirName, ConfigFileName), `{"out_dir": "nested-out"}`)
+
+	sub := filepath.Join(nested, "internal")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatalf("failed to create dir: %s", err.Error())
+	}
+
+	cfg, err := Load(sub)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err.Error())
+	}
+
+	if cfg.Root() != nested {
+		t.Errorf("root = %q, want %q", cfg.Root(), nested)
+	}
+
+	if cfg.Module != "github.com/nxdir-s/demo" {
+		t.Errorf("module = %q, want github.com/nxdir-s/demo", cfg.Module)
+	}
+
+	if cfg.OutDir != "nested-out" {
+		t.Errorf("out dir = %q, want the nested project config to apply", cfg.OutDir)
+	}
+}
+
 func TestLoadProjectConfigOverridesUserConfig(t *testing.T) {
 	root, userDir := newProject(t)
 

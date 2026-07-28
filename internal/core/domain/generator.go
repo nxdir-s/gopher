@@ -259,6 +259,13 @@ func (d *Generator) render(ref entity.TemplateRef, data *entity.TemplateData, re
 		if err := d.merge(artifact, data); err != nil {
 			return nil, err
 		}
+
+		// a declaration already present makes this a no op and leaves the
+		// content exactly as it sits on disk, so formatting it would pay a parse
+		// and a print to produce a result the write loop then skips
+		if artifact.Status == entity.StatusUnchanged {
+			return artifact, nil
+		}
 	}
 
 	if ref.Mode == entity.ModeEnsure && !req.Force && d.writer.Exists(path) {

@@ -8,6 +8,10 @@ import (
 	"github.com/nxdir-s/gopher/internal/core/valobj"
 )
 
+// LeftDelim opens a template action. The renderer never calls Delims, so this
+// is the only sequence that can start one
+const LeftDelim string = "{{"
+
 type ErrParseTemplate struct {
 	name string
 	err  error
@@ -48,7 +52,17 @@ func NewTemplateAdapter() *TemplateAdapter {
 
 // Render parses and executes the supplied template against the data. Templates
 // error on missing keys so a typo fails loudly instead of rendering "<no value>"
+//
+// Source holding no action renders to itself, and parsing is the expensive half
+// of this function, so that case returns early. It is worth the check because
+// most of what the pipeline renders is not a template at all: a TemplateRef
+// carries its name and output path as templates too, and almost all of them are
+// literal strings
 func (a *TemplateAdapter) Render(name string, tmpl []byte, data any) ([]byte, error) {
+	if !bytes.Contains(tmpl, []byte(LeftDelim)) {
+		return bytes.Clone(tmpl), nil
+	}
+
 	parsed, err := template.New(name).Funcs(a.funcs).Option("missingkey=error").Parse(string(tmpl))
 	if err != nil {
 		return nil, &ErrParseTemplate{name, err}

@@ -76,6 +76,41 @@ func TestStoreLoadPrefersFirstOverrideDir(t *testing.T) {
 	}
 }
 
+// TestStoreLoadSkipsMissingOverrideDirs covers the pruning the constructor does.
+// The missing directory sits ahead of the present one, so a prune that dropped
+// the wrong entry or disturbed the order would resolve to the wrong source
+// rather than fail outright
+func TestStoreLoadSkipsMissingOverrideDirs(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent")
+	user := t.TempDir()
+
+	writeTemplate(t, user, "adapter/generic", "user generic")
+
+	store := NewStoreAdapter(embeddedFS(), "files", WithTemplateDir(missing), WithTemplateDir(user))
+
+	if len(store.dirs) != 1 {
+		t.Fatalf("got %d lookup dirs, want the missing one dropped", len(store.dirs))
+	}
+
+	tests := map[string]string{
+		"adapter/generic": "user generic",
+		"core/entity":     "embedded entity",
+	}
+
+	for name, expected := range tests {
+		t.Run(name, func(t *testing.T) {
+			src, err := store.Load(name)
+			if err != nil {
+				t.Fatalf("unexpected error: %s", err.Error())
+			}
+
+			if string(src) != expected {
+				t.Errorf("got %q, want %q", src, expected)
+			}
+		})
+	}
+}
+
 func TestStoreOriginReportsOverrides(t *testing.T) {
 	project := t.TempDir()
 
