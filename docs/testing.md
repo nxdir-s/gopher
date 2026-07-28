@@ -23,6 +23,14 @@ make bench                             # benchmarks, which no test run touches
 | Compile | `internal/core/domain/compile_test.go` | generated code actually type-checks |
 | Bench | `internal/adapters/bench_test.go`, `cli_bench_test.go`, `internal/core/domain/bench_test.go`, `internal/config/bench_test.go`, `cmd/gopher/bench_test.go` | what the pipeline costs, per layer |
 
+Create-mode refs render concurrently, so any change to the generator or an
+adapter it drives must also pass the race detector — the `setup` and `infra`
+golden cases push the fanned path through it:
+
+```bash
+go test -race ./internal/core/domain/ ./internal/adapters/
+```
+
 ## Golden files
 
 `internal/core/domain/testdata/*.golden` are the regression net for template

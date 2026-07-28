@@ -407,3 +407,38 @@ func TestUsageErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestRunFastPathsNeedOnlyRegistry pins the wiring contract main.go relies on:
+// version, list, describe, help, and usage errors are dispatched with a nil
+// generator, catalog, and config, so those paths must never touch them — a
+// path that does panics here instead of in a user's terminal
+func TestRunFastPathsNeedOnlyRegistry(t *testing.T) {
+	tests := map[string]struct {
+		args []string
+		code int
+	}{
+		"version":  {[]string{"version"}, ExitOk},
+		"list":     {[]string{"list"}, ExitOk},
+		"describe": {[]string{"describe", "entity"}, ExitOk},
+		"help":     {[]string{"help"}, ExitOk},
+		"unknown":  {[]string{"nope"}, ExitUsage},
+		"empty":    {nil, ExitUsage},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+
+			registry := &testRegistry{specs: []*entity.GenSpec{{Type: valobj.GenEntity, Summary: "test entity"}}}
+
+			cli := NewCliAdapter(nil, nil, registry, nil, "1.2.3",
+				WithStdout(&stdout),
+				WithStderr(&stderr),
+			)
+
+			if code := cli.Run(context.Background(), tc.args); code != tc.code {
+				t.Errorf("exit code = %d, want %d", code, tc.code)
+			}
+		})
+	}
+}

@@ -21,8 +21,28 @@ func main() {
 	os.Exit(run())
 }
 
-// run wires the dependencies and dispatches, returning the exit code
+// run wires the dependencies the requested command actually uses, then
+// dispatches. version, list, describe, and help resolve everything they print
+// from the registry alone, so they skip the config load, the store stats, and
+// the generator wiring — a broken config cannot break them
 func run() int {
+	args := os.Args[1:]
+
+	command := ""
+	if len(args) > 0 {
+		command = args[0]
+	}
+
+	registry := domain.NewRegistry()
+
+	switch command {
+	case adapters.GenerateCmd, adapters.TemplatesCmd:
+	default:
+		cli := adapters.NewCliAdapter(nil, nil, registry, nil, Version)
+
+		return cli.Run(context.Background(), args)
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -49,7 +69,22 @@ func run() int {
 
 	store := adapters.NewStoreAdapter(templates.FS, templates.Root, storeOpts...)
 	writer := adapters.NewFsAdapter()
-	registry := domain.NewRegistry()
+
+	if command == adapters.TemplatesCmd {
+		catalog, err := domain.NewCatalog(logger,
+			domain.WithTemplateCatalog(store),
+			domain.WithCatalogWriter(writer),
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to create catalog: %s\n", err.Error())
+
+			return adapters.ExitError
+		}
+
+		cli := adapters.NewCliAdapter(nil, catalog, registry, cfg, Version)
+
+		return cli.Run(ctx, args)
+	}
 
 	generator, err := domain.NewGenerator(logger,
 		domain.WithRegistry(registry),
@@ -65,17 +100,7 @@ func run() int {
 		return adapters.ExitError
 	}
 
-	catalog, err := domain.NewCatalog(logger,
-		domain.WithTemplateCatalog(store),
-		domain.WithCatalogWriter(writer),
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create catalog: %s\n", err.Error())
+	cli := adapters.NewCliAdapter(generator, nil, registry, cfg, Version)
 
-		return adapters.ExitError
-	}
-
-	cli := adapters.NewCliAdapter(generator, catalog, registry, cfg, Version)
-
-	return cli.Run(ctx, os.Args[1:])
+	return cli.Run(ctx, args)
 }

@@ -37,9 +37,11 @@ type {{.Name.Pascal}}Opt func(a *{{.Name.Pascal}}Adapter) error
 ```
 
 **2. Advertise it.** In `internal/core/domain/registry.go`, add
-`AdapterRedis string = "redis"` to the adapter kind const block and return it
-from `AdapterKinds()`. That list feeds the `-kind` usage string and
-`TestKindsHaveTemplates`, which will now fail until step 1 exists.
+`AdapterRedis string = "redis"` to the adapter kind const block, return it from
+`AdapterKinds()`, and append it to the `adapterKindUsage` const the `-kind`
+flag shows. Two tests police this: `TestKindsHaveTemplates` fails until step 1
+exists, and `TestKindUsageStringsMatchKinds` fails until the usage const names
+the new kind.
 
 **3. Add a golden case.** The golden test in
 `internal/core/domain/golden_test.go` already loops over `AdapterKinds()`, so
@@ -82,11 +84,15 @@ no reason.
 
 ### 2. Add the spec
 
-In `specs` in `internal/core/domain/registry.go`. Every field:
+In `internal/core/domain/registry.go`: a constructor beside the other `spec*`
+functions, a case in `specFor`, and an entry in `genTypes` — its position sets
+where `list` and `describe` show the type. `TestSpecsCanonicalOrder` fails if
+the case or the entry is missing. Every field:
 
 ```go
-{
-    Type:           valobj.GenMiddleware,
+func specMiddleware() *entity.GenSpec {
+    return &entity.GenSpec{
+        Type:           valobj.GenMiddleware,
     Summary:        "generate an http middleware",  // shown by `list`
     RequiresModule: false,                          // true if templates need .Module
     Flags: []entity.FlagSpec{
@@ -112,14 +118,15 @@ In `specs` in `internal/core/domain/registry.go`. Every field:
             Default: "false",
         },
     },
-    Templates: []entity.TemplateRef{
-        {
-            Name: "middleware/handler",                              // template to load
-            Out:  "internal/adapters/middleware/{{.Name.Snake}}.go", // where it goes
-            Mode: entity.ModeCreate,                                 // the zero value
+        Templates: []entity.TemplateRef{
+            {
+                Name: "middleware/handler",                              // template to load
+                Out:  "internal/adapters/middleware/{{.Name.Snake}}.go", // where it goes
+                Mode: entity.ModeCreate,                                 // the zero value
+            },
         },
-    },
-},
+    }
+}
 ```
 
 Both `Name` and `Out` are rendered as templates first, so either can branch on a
@@ -189,7 +196,7 @@ Then add a row to the types table in the root [README.md](../README.md).
 
 ```
 [ ] GenType constant + genTypeNames entry
-[ ] GenSpec in registry.go — Summary, every flag with a Usage
+[ ] spec constructor + specFor case + genTypes entry in registry.go
 [ ] template under templates/files/<type>/
 [ ] golden case in golden_test.go
 [ ] compile check if the output is stdlib-only

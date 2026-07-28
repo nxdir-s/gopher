@@ -38,6 +38,12 @@ func (e *ErrReadFile) Error() string {
 	return "failed to read '" + e.path + "': " + e.err.Error()
 }
 
+// Unwrap exposes the cause so errors.Is sees fs.ErrNotExist through the wrap,
+// which the ports.FileWriter contract requires of Read
+func (e *ErrReadFile) Unwrap() error {
+	return e.err
+}
+
 type FsOpt func(a *FsAdapter)
 
 // WithFileMode sets the mode used for created files

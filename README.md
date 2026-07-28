@@ -9,7 +9,9 @@ slow. gopher inverts that: the style lives in versioned templates, and the model
 calls a CLI to instantiate them. Claude Code runs `gopher generate`, gets
 correctly-styled files, then adapts them with full project context.
 
-The binary has **no dependencies** outside the standard library.
+The binary has **no third-party dependencies** — the standard library plus one
+first-party, stdlib-only module
+([pipelines](https://github.com/nxdir-s/pipelines), which fans out rendering).
 
 ## Install
 
