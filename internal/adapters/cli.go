@@ -32,6 +32,33 @@ const (
 
 	InitSubCmd string = "init"
 	ListSubCmd string = "list"
+
+	// CommandPrefix names the flag set a subcommand parses with, so a usage
+	// error prints the command the way it was typed
+	CommandPrefix string = "gopher "
+)
+
+// the flags every generate command accepts on top of the ones its spec declares
+const (
+	OutFlag    string = "out"
+	ModuleFlag string = "module"
+	ForceFlag  string = "force"
+	DryRunFlag string = "dry-run"
+	StdoutFlag string = "stdout"
+)
+
+// the flags the inspection commands accept. JSONFlag switches a command to its
+// machine readable payload, DirFlag is where 'templates init' exports to
+const (
+	JSONFlag string = "json"
+	DirFlag  string = "dir"
+)
+
+// the forms help is asked for, and the prefix that marks an argument as a flag
+const (
+	HelpShortFlag string = "-h"
+	HelpLongFlag  string = "--help"
+	FlagPrefix    string = "-"
 )
 
 type ErrDuplicateFlag struct {
@@ -42,21 +69,30 @@ func (e *ErrDuplicateFlag) Error() string {
 	return "flag '" + e.name + "' is reserved by gopher"
 }
 
-// globals are the flags every generate command accepts on top of the ones its
-// spec declares. They are reported by describe so callers can discover them
-var globals = []entity.FlagSpec{
-	{Name: "out", Usage: "directory the generated files are written to", Default: "."},
-	{Name: "module", Usage: "go module path, defaults to the module in go.mod"},
-	{Name: "force", Usage: "overwrite existing files", Type: entity.FlagBool, Default: "false"},
-	{Name: "dry-run", Usage: "print the paths that would be written", Type: entity.FlagBool, Default: "false"},
-	{Name: "stdout", Usage: "print the generated source instead of writing it", Type: entity.FlagBool, Default: "false"},
+// defaultGlobals declares the global flags. They are reported by describe so
+// callers can discover them, and reserved so a spec cannot redeclare one
+func defaultGlobals() []entity.FlagSpec {
+	return []entity.FlagSpec{
+		{Name: OutFlag, Usage: "directory the generated files are written to", Default: config.DefaultOutDir},
+		{Name: ModuleFlag, Usage: "go module path, defaults to the module in go.mod"},
+		{Name: ForceFlag, Usage: "overwrite existing files", Type: entity.FlagBool, Default: entity.BoolFalse},
+		{Name: DryRunFlag, Usage: "print the paths that would be written", Type: entity.FlagBool, Default: entity.BoolFalse},
+		{Name: StdoutFlag, Usage: "print the generated source instead of writing it", Type: entity.FlagBool, Default: entity.BoolFalse},
+	}
 }
 
-// verbs describe what a dry run would do to each artifact
-var verbs = map[entity.ArtifactStatus]string{
-	entity.StatusCreated:   "write",
-	entity.StatusAppended:  "append to",
-	entity.StatusUnchanged: "leave unchanged",
+// verb describes what a dry run would do to an artifact
+func verb(status entity.ArtifactStatus) string {
+	switch status {
+	case entity.StatusCreated:
+		return "write"
+	case entity.StatusAppended:
+		return "append to"
+	case entity.StatusUnchanged:
+		return "leave unchanged"
+	default:
+		return "write"
+	}
 }
 
 type CliOpt func(a *CliAdapter)
@@ -80,6 +116,7 @@ type CliAdapter struct {
 	catalog   ports.Catalog
 	registry  ports.Registry
 	cfg       *config.Config
+	globals   []entity.FlagSpec
 	stdout    io.Writer
 	stderr    io.Writer
 	version   string
@@ -92,6 +129,7 @@ func NewCliAdapter(generator ports.Generator, catalog ports.Catalog, registry po
 		catalog:   catalog,
 		registry:  registry,
 		cfg:       cfg,
+		globals:   defaultGlobals(),
 		stdout:    os.Stdout,
 		stderr:    os.Stderr,
 		version:   version,
@@ -125,7 +163,7 @@ func (a *CliAdapter) Run(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.stdout, "gopher %s\n", a.version)
 
 		return ExitOk
-	case HelpCmd, "-h", "--help":
+	case HelpCmd, HelpShortFlag, HelpLongFlag:
 		a.usage()
 
 		return ExitOk
@@ -151,14 +189,14 @@ func (a *CliAdapter) generate(ctx context.Context, args []string) int {
 		return code
 	}
 
-	set := flag.NewFlagSet("gopher "+GenerateCmd+" "+spec.Type.String(), flag.ContinueOnError)
+	set := flag.NewFlagSet(CommandPrefix+GenerateCmd+" "+spec.Type.String(), flag.ContinueOnError)
 	set.SetOutput(a.stderr)
 
-	out := set.String("out", a.cfg.OutDir, globals[0].Usage)
-	module := set.String("module", a.cfg.Module, globals[1].Usage)
-	force := set.Bool("force", false, globals[2].Usage)
-	dryRun := set.Bool("dry-run", false, globals[3].Usage)
-	stdout := set.Bool("stdout", false, globals[4].Usage)
+	out := set.String(OutFlag, a.cfg.OutDir, a.usageFor(OutFlag))
+	module := set.String(ModuleFlag, a.cfg.Module, a.usageFor(ModuleFlag))
+	force := set.Bool(ForceFlag, false, a.usageFor(ForceFlag))
+	dryRun := set.Bool(DryRunFlag, false, a.usageFor(DryRunFlag))
+	stdout := set.Bool(StdoutFlag, false, a.usageFor(StdoutFlag))
 
 	strs := make(map[string]*string, len(spec.Flags))
 	bools := make(map[string]*bool, len(spec.Flags))
@@ -167,7 +205,7 @@ func (a *CliAdapter) generate(ctx context.Context, args []string) int {
 	for i := range spec.Flags {
 		flagSpec := spec.Flags[i]
 
-		if reserved(flagSpec.Name) {
+		if a.reserved(flagSpec.Name) {
 			fmt.Fprintf(a.stderr, "%s\n", (&ErrDuplicateFlag{flagSpec.Name}).Error())
 
 			return ExitError
@@ -180,7 +218,7 @@ func (a *CliAdapter) generate(ctx context.Context, args []string) int {
 
 		switch flagSpec.Type {
 		case entity.FlagBool:
-			bools[flagSpec.Name] = set.Bool(flagSpec.Name, value == "true", flagSpec.Usage)
+			bools[flagSpec.Name] = set.Bool(flagSpec.Name, value == entity.BoolTrue, flagSpec.Usage)
 		case entity.FlagList:
 			list := &listValue{}
 			set.Var(list, flagSpec.Name, flagSpec.Usage+" (repeatable)")
@@ -201,8 +239,8 @@ func (a *CliAdapter) generate(ctx context.Context, args []string) int {
 
 	// the module has to describe the tree being written to, not the directory
 	// gopher happens to run from, so an explicit -out re-resolves it
-	if _, ok := provided["module"]; !ok {
-		if _, redirected := provided["out"]; redirected {
+	if _, ok := provided[ModuleFlag]; !ok {
+		if _, redirected := provided[OutFlag]; redirected {
 			*module = config.FindModule(*out)
 		}
 	}
@@ -244,10 +282,10 @@ func (a *CliAdapter) generate(ctx context.Context, args []string) int {
 
 // list prints the registered generation types
 func (a *CliAdapter) list(args []string) int {
-	set := flag.NewFlagSet("gopher "+ListCmd, flag.ContinueOnError)
+	set := flag.NewFlagSet(CommandPrefix+ListCmd, flag.ContinueOnError)
 	set.SetOutput(a.stderr)
 
-	asJSON := set.Bool("json", false, "print the types as json")
+	asJSON := set.Bool(JSONFlag, false, "print the types as json")
 
 	if err := set.Parse(args); err != nil {
 		return ExitUsage
@@ -296,10 +334,10 @@ func (a *CliAdapter) describe(args []string) int {
 		return ExitUsage
 	}
 
-	set := flag.NewFlagSet("gopher "+DescribeCmd, flag.ContinueOnError)
+	set := flag.NewFlagSet(CommandPrefix+DescribeCmd, flag.ContinueOnError)
 	set.SetOutput(a.stderr)
 
-	asJSON := set.Bool("json", false, "print the type as json")
+	asJSON := set.Bool(JSONFlag, false, "print the type as json")
 
 	if err := set.Parse(rest); err != nil {
 		return ExitUsage
@@ -311,7 +349,7 @@ func (a *CliAdapter) describe(args []string) int {
 	}
 
 	if *asJSON {
-		return a.writeJSON(describeOutput{spec, globals})
+		return a.writeJSON(describeOutput{spec, a.globals})
 	}
 
 	fmt.Fprintf(a.stdout, "%s - %s\n\n", spec.Type.String(), spec.Summary)
@@ -320,7 +358,7 @@ func (a *CliAdapter) describe(args []string) int {
 	a.printFlags(spec.Flags)
 
 	fmt.Fprintf(a.stdout, "\nglobal flags:\n")
-	a.printFlags(globals)
+	a.printFlags(a.globals)
 
 	fmt.Fprintf(a.stdout, "\ngenerates:\n")
 	for i := range spec.Templates {
@@ -352,10 +390,10 @@ func (a *CliAdapter) templates(ctx context.Context, args []string) int {
 
 // templatesList prints every template and where it resolves from
 func (a *CliAdapter) templatesList(args []string) int {
-	set := flag.NewFlagSet("gopher "+TemplatesCmd+" "+ListSubCmd, flag.ContinueOnError)
+	set := flag.NewFlagSet(CommandPrefix+TemplatesCmd+" "+ListSubCmd, flag.ContinueOnError)
 	set.SetOutput(a.stderr)
 
-	asJSON := set.Bool("json", false, "print the templates as json")
+	asJSON := set.Bool(JSONFlag, false, "print the templates as json")
 
 	if err := set.Parse(args); err != nil {
 		return ExitUsage
@@ -381,12 +419,12 @@ func (a *CliAdapter) templatesList(args []string) int {
 
 // templatesInit exports the embedded templates so they can be edited
 func (a *CliAdapter) templatesInit(ctx context.Context, args []string) int {
-	set := flag.NewFlagSet("gopher "+TemplatesCmd+" "+InitSubCmd, flag.ContinueOnError)
+	set := flag.NewFlagSet(CommandPrefix+TemplatesCmd+" "+InitSubCmd, flag.ContinueOnError)
 	set.SetOutput(a.stderr)
 
-	dir := set.String("dir", config.UserTemplateDir(), "directory the templates are written to")
-	force := set.Bool("force", false, "overwrite existing templates")
-	asJSON := set.Bool("json", false, "print the result as json")
+	dir := set.String(DirFlag, config.UserTemplateDir(), "directory the templates are written to")
+	force := set.Bool(ForceFlag, false, "overwrite existing templates")
+	asJSON := set.Bool(JSONFlag, false, "print the result as json")
 
 	if err := set.Parse(args); err != nil {
 		return ExitUsage
@@ -451,7 +489,7 @@ func (a *CliAdapter) report(artifacts []*entity.Artifact, req *entity.Request) {
 
 	for i := range artifacts {
 		if req.DryRun {
-			fmt.Fprintf(a.stdout, "would %s %s\n", verbs[artifacts[i].Status], artifacts[i].Path)
+			fmt.Fprintf(a.stdout, "would %s %s\n", verb(artifacts[i].Status), artifacts[i].Path)
 
 			continue
 		}
@@ -526,7 +564,7 @@ func (a *CliAdapter) usage() {
 // that use it declare bool flags only, so a value can never be mistaken for it
 func splitPositional(args []string) (string, []string) {
 	for i := range args {
-		if strings.HasPrefix(args[i], "-") {
+		if strings.HasPrefix(args[i], FlagPrefix) {
 			continue
 		}
 
@@ -541,14 +579,25 @@ func splitPositional(args []string) (string, []string) {
 }
 
 // reserved reports whether a name collides with a global flag
-func reserved(name string) bool {
-	for i := range globals {
-		if globals[i].Name == name {
+func (a *CliAdapter) reserved(name string) bool {
+	for i := range a.globals {
+		if a.globals[i].Name == name {
 			return true
 		}
 	}
 
 	return false
+}
+
+// usageFor returns the help text of the supplied global flag
+func (a *CliAdapter) usageFor(name string) string {
+	for i := range a.globals {
+		if a.globals[i].Name == name {
+			return a.globals[i].Usage
+		}
+	}
+
+	return ""
 }
 
 // listValue collects a repeatable flag into a slice

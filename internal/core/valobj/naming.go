@@ -5,39 +5,6 @@ import (
 	"unicode"
 )
 
-// initialisms are words that stay fully capitalized in Go identifiers
-var initialisms = map[string]struct{}{
-	"ACL":   {},
-	"API":   {},
-	"ASCII": {},
-	"CPU":   {},
-	"CSS":   {},
-	"DB":    {},
-	"DNS":   {},
-	"EOF":   {},
-	"GRPC":  {},
-	"HTML":  {},
-	"HTTP":  {},
-	"HTTPS": {},
-	"ID":    {},
-	"IP":    {},
-	"JSON":  {},
-	"RPC":   {},
-	"SLA":   {},
-	"SQL":   {},
-	"SSH":   {},
-	"TCP":   {},
-	"TLS":   {},
-	"TTL":   {},
-	"UDP":   {},
-	"UI":    {},
-	"URI":   {},
-	"URL":   {},
-	"UTF8":  {},
-	"UUID":  {},
-	"XML":   {},
-}
-
 // Naming holds the case variations derived from a single input name
 type Naming struct {
 	Pascal string `json:"pascal"`
@@ -157,8 +124,12 @@ func capitalize(word string) string {
 		return word
 	}
 
-	upper := strings.ToUpper(word)
-	if _, ok := initialisms[upper]; ok {
+	// initialisms stay fully capitalized in Go identifiers
+	switch upper := strings.ToUpper(word); upper {
+	case "ACL", "API", "ASCII", "CPU", "CSS", "DB", "DNS", "EOF", "GRPC",
+		"HTML", "HTTP", "HTTPS", "ID", "IP", "JSON", "RPC", "SLA", "SQL",
+		"SSH", "TCP", "TLS", "TTL", "UDP", "UI", "URI", "URL", "UTF8",
+		"UUID", "XML":
 		return upper
 	}
 

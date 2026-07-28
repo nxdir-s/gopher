@@ -13,20 +13,18 @@ const (
 	ModeEnsure
 )
 
-var artifactModeNames = map[ArtifactMode]string{
-	ModeCreate: "create",
-	ModeAppend: "append",
-	ModeEnsure: "ensure",
-}
-
 // String returns the name of the mode
 func (m ArtifactMode) String() string {
-	name, ok := artifactModeNames[m]
-	if !ok {
+	switch m {
+	case ModeCreate:
+		return "create"
+	case ModeAppend:
+		return "append"
+	case ModeEnsure:
+		return "ensure"
+	default:
 		return "create"
 	}
-
-	return name
 }
 
 // MarshalJSON encodes the mode as its name
@@ -43,20 +41,18 @@ const (
 	StatusUnchanged
 )
 
-var artifactStatusNames = map[ArtifactStatus]string{
-	StatusCreated:   "created",
-	StatusAppended:  "appended",
-	StatusUnchanged: "unchanged",
-}
-
 // String returns the name of the status
 func (s ArtifactStatus) String() string {
-	name, ok := artifactStatusNames[s]
-	if !ok {
+	switch s {
+	case StatusCreated:
+		return "created"
+	case StatusAppended:
+		return "appended"
+	case StatusUnchanged:
+		return "unchanged"
+	default:
 		return "created"
 	}
-
-	return name
 }
 
 // Artifact is a single rendered file waiting to be written

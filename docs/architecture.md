@@ -139,7 +139,7 @@ behavior is small and worth reading in full:
 | File | Lines | Why it matters |
 |---|---|---|
 | `internal/core/domain/generator.go` | 440 | The whole engine. See [pipeline.md](pipeline.md) |
-| `internal/core/domain/registry.go` | 514 | Data, not logic — 11 specs. The system's shape |
-| `internal/adapters/cli.go` | 569 | Flag sets built from specs; add commands here, not types |
+| `internal/core/domain/registry.go` | 577 | Data, not logic — 11 specs. The system's shape |
+| `internal/adapters/cli.go` | 618 | Flag sets built from specs; add commands here, not types |
 | `internal/adapters/gosource.go` | 380 | AST merge and signature parsing. The subtlest code here |
 | `internal/config/config.go` | 265 | Precedence and module detection |

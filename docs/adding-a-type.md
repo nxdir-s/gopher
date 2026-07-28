@@ -36,12 +36,13 @@ type {{.Name.Pascal}}Opt func(a *{{.Name.Pascal}}Adapter) error
 ...
 ```
 
-**2. Advertise it.** Add `"redis"` to `AdapterKinds` in
-`internal/core/domain/registry.go`. That slice feeds the `-kind` usage string
-and `TestKindsHaveTemplates`, which will now fail until step 1 exists.
+**2. Advertise it.** In `internal/core/domain/registry.go`, add
+`AdapterRedis string = "redis"` to the adapter kind const block and return it
+from `AdapterKinds()`. That list feeds the `-kind` usage string and
+`TestKindsHaveTemplates`, which will now fail until step 1 exists.
 
 **3. Add a golden case.** The golden test in
-`internal/core/domain/golden_test.go` already loops over `AdapterKinds`, so
+`internal/core/domain/golden_test.go` already loops over `AdapterKinds()`, so
 there is nothing to write — just generate the file:
 
 ```bash
@@ -125,8 +126,14 @@ Both `Name` and `Out` are rendered as templates first, so either can branch on a
 flag. An `Out` that renders empty drops the artifact — that is how optional
 files work. See [pipeline.md](pipeline.md).
 
-Flag names may not collide with the globals (`out`, `module`, `force`,
-`dry-run`, `stdout`); the CLI rejects that at runtime with `ErrDuplicateFlag`.
+Name a flag with a constant from `internal/core/domain/flags.go` rather than a
+literal — `generator.go` reads several of them back by name, and the constant is
+what keeps the two sides spelling it the same way. Add one there if the flag is
+new.
+
+Flag names may not collide with the globals (`OutFlag`, `ModuleFlag`,
+`ForceFlag`, `DryRunFlag`, `StdoutFlag` in `internal/adapters/cli.go`); the CLI
+rejects that at runtime with `ErrDuplicateFlag`.
 
 ### 3. Write the template
 
