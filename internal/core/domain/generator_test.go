@@ -27,7 +27,7 @@ func newTestGenerator(t *testing.T, templates map[string]string, spec *entity.Ge
 	writer := fake.NewWriter()
 
 	generator, err := NewGenerator(slog.New(slog.DiscardHandler),
-		WithRegistry(&Registry{specs: []*entity.GenSpec{spec}}),
+		WithRegistry(NewRegistry(WithSpecs([]*entity.GenSpec{spec}))),
 		WithTemplateSource(fake.NewStore(templates)),
 		WithRenderer(adapters.NewTemplateAdapter()),
 		WithFormatter(adapters.NewFormatAdapter()),

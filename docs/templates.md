@@ -62,9 +62,9 @@ separators, case transitions, and acronym boundaries, then derives:
 "user_id"         → UserID          userID          user_id
 ```
 
-`user_id → UserID` rather than `UserId` comes from the initialisms table at the
-top of that file. Add to it when a new one bites; `naming_test.go` is a table
-test and cheap to extend.
+`user_id → UserID` rather than `UserId` comes from the initialisms switch in
+`capitalize` at the bottom of that file. Add a case when a new one bites;
+`naming_test.go` is a table test and cheap to extend.
 
 `.Words` (`"order repository"`) exists for doc comments, where `.Snake` and
 `.Lower` both read badly.

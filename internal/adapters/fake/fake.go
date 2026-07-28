@@ -7,6 +7,10 @@ import (
 	"sort"
 )
 
+// OriginPrefix marks the origin a fake reports, the way the store adapter marks
+// the templates it resolves from the embedded set
+const OriginPrefix string = "fake:"
+
 type ErrTemplateNotFound struct {
 	name string
 }
@@ -70,7 +74,7 @@ func (s *Store) Embedded() ([]string, error) {
 
 // Origin returns a synthetic origin for the named template
 func (s *Store) Origin(name string) (string, bool) {
-	return "fake:" + name, false
+	return OriginPrefix + name, false
 }
 
 // Writer is an in memory ports.FileWriter

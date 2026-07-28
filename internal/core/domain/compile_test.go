@@ -14,11 +14,6 @@ import (
 	"github.com/nxdir-s/gopher/internal/core/valobj"
 )
 
-// stdlibKinds are the adapter kinds that import nothing outside the standard
-// library, so they can be type checked without fetching modules. The remaining
-// kinds are only checked for formatting and syntax by the golden tests
-var stdlibKinds = []string{"cmd", "zip"}
-
 const testModule string = "github.com/nxdir-s/compilecheck"
 
 // TestGeneratedCodeCompiles renders the stdlib only templates into a throwaway
@@ -33,6 +28,11 @@ func TestGeneratedCodeCompiles(t *testing.T) {
 	}
 
 	generator := newEmbeddedGenerator(t)
+
+	// the adapter kinds that import nothing outside the standard library, so
+	// they can be type checked without fetching modules. The remaining kinds
+	// are only checked for formatting and syntax by the golden tests
+	stdlibKinds := []string{"cmd", "zip"}
 
 	for _, kind := range stdlibKinds {
 		t.Run(kind, func(t *testing.T) {

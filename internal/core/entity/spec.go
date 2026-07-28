@@ -11,20 +11,18 @@ const (
 	FlagList
 )
 
-var flagTypeNames = map[FlagType]string{
-	FlagString: "string",
-	FlagBool:   "bool",
-	FlagList:   "list",
-}
-
 // String returns the name of the flag type
 func (t FlagType) String() string {
-	name, ok := flagTypeNames[t]
-	if !ok {
+	switch t {
+	case FlagString:
+		return "string"
+	case FlagBool:
+		return "bool"
+	case FlagList:
+		return "list"
+	default:
 		return "string"
 	}
-
-	return name
 }
 
 // MarshalJSON encodes the flag type as its name

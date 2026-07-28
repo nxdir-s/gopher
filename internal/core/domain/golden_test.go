@@ -49,14 +49,16 @@ func newEmbeddedGeneratorWith(t *testing.T, writer ports.FileWriter) *Generator 
 }
 
 // TestGoldenTemplates renders the embedded templates and compares them against
-// the checked in output. Run with -update to refresh
+// the checked in output. Set GOPHER_UPDATE_GOLDEN to refresh
 func TestGoldenTemplates(t *testing.T) {
+	kinds := AdapterKinds()
+
 	tests := make([]struct {
 		golden string
 		req    *entity.Request
-	}, 0, len(AdapterKinds)+1)
+	}, 0, len(kinds)+1)
 
-	for _, kind := range AdapterKinds {
+	for _, kind := range kinds {
 		tests = append(tests, struct {
 			golden string
 			req    *entity.Request

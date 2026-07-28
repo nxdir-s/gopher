@@ -172,3 +172,69 @@ what you want — the CDK dependency tree stays out of the application's.
 `go.mod`, `cdk.json`, and `.gitignore` pass through untouched. Obvious in
 hindsight; worth stating because the check is a single `strings.HasSuffix` that
 would be easy to drop.
+
+## No package-level variables
+
+The `require` block is not the only thing kept empty — so is the set of package
+level `var`s. Two remain, both mandated:
+
+- `templates.FS`, because `//go:embed` can only target a package-level variable
+- `main.Version`, because `-ldflags -X` can only write to one
+
+Each is passed into a constructor at its single call site, so nothing reads them
+ambiently.
+
+Everything else became a function. The lookup tables backing `String()` and
+`ParseGenType` are `switch` statements, since a value type's method has nowhere
+to inject a table. `AdapterKinds` and friends return a fresh slice per call
+rather than exposing a mutable exported one. `specs` became `defaultSpecs()`, so
+each `Registry` owns its own `*entity.GenSpec` pointers — previously every
+registry shared one backing array, and a write through `Registry.Spec()` would
+have leaked into every other registry in the process.
+
+**Rejected:** leaving the read-only tables alone because "they are never
+written." True today, but the guarantee costs nothing to make structural, and a
+`switch` is faster and allocates nothing.
+
+The `cli.go` globals were the concrete motivation. The global flag table was read
+by position — `globals[0].Usage` beside a hardcoded `"out"` — so reordering the
+slice would have silently attached the wrong help text to a flag. It is now a
+`CliAdapter` field keyed by name through `usageFor`, with the flag names as
+constants, and `cli_test.go` asserts each flag is followed by its own usage.
+
+## Strings that carry meaning are constants
+
+A string is named when it crosses a boundary the compiler does not check. Four
+of those existed:
+
+- **Flag names.** `registry.go` declares `FlagSpec{Name: ...}`; `templateData`
+  in `generator.go` reads eight of them back out of the materialized maps. Two
+  files, one contract, no link. They now share
+  [flags.go](../internal/core/domain/flags.go).
+- **Kinds and sides.** A kind flag's `Default` has to be a member of the list
+  the same flag advertises. `TestDefaultKindsAreAdvertised` now proves it, using
+  `entity.GenSpec.Flag` to read the real default rather than trusting the
+  constant.
+- **`"true"` / `"false"`.** A bool flag travels as a string so `Flags` can stay
+  one map, which made the spelling a protocol between five sites. It is
+  `entity.BoolTrue` / `entity.BoolFalse`, declared next to `Request.Bool`.
+- **CLI flag names.** `cli.go` had a const block for the global flags and then
+  spelled `"json"` out four more times for the inspection commands.
+
+**Deliberately left as literals:**
+
+- **Anything inside a template string.** `` Out: `{{if eq .Flags.gomod "true"}}go.mod{{end}}` ``
+  is `text/template` source, not a Go value. Substituting a constant means
+  concatenation, which costs readability and buys nothing — the template engine
+  never sees the Go identifier.
+- **Single-use data in the spec table.** `Out:` paths, template names, package
+  defaults, usage prose. A constant referenced once is indirection, not safety;
+  the declaration reads better spelled out.
+- **Format strings, error fragments, separators.** `"%s\n"` is clearer than a
+  name for it.
+
+**Rejected:** distinct named types (`type FlagName string`). It would catch a
+kind passed where a flag name belongs, but `FlagSpec.Name` and the `Flags` /
+`Lists` map keys would all have to change type, pushing a naming concern into
+the template data contract. The explicit `const X string = "..."` form matches
+the rest of the codebase and was enough.

@@ -342,39 +342,39 @@ func (d *Generator) templateData(spec *entity.GenSpec, req *entity.Request) (*en
 		flags[name] = value
 	}
 
-	fields, err := valobj.ParseFields(lists["field"])
+	fields, err := valobj.ParseFields(lists[FieldFlag])
 	if err != nil {
 		return nil, err
 	}
 
-	ports, err := valobj.ParseFields(lists["port"])
+	ports, err := valobj.ParseFields(lists[PortFlag])
 	if err != nil {
 		return nil, err
 	}
 
-	methods, err := d.merger.Methods(lists["method"])
+	methods, err := d.merger.Methods(lists[MethodFlag])
 	if err != nil {
 		return nil, err
 	}
 
-	name := flags["name"]
+	name := flags[NameFlag]
 	if len(name) == 0 {
 		name = path.Base(req.Module)
 	}
 
 	return &entity.TemplateData{
 		Name:      valobj.NewNaming(name),
-		Package:   flags["pkg"],
+		Package:   flags[PkgFlag],
 		Module:    req.Module,
-		Kind:      flags["kind"],
+		Kind:      flags[KindFlag],
 		GoVersion: goVersion(),
 		Fields:    fields,
 		Ports:     ports,
 		Methods:   methods,
 		Flags:     flags,
 		Lists:     lists,
-		Tracer:    flags["tracer"] == "true",
-		Logger:    flags["logger"] == "true",
+		Tracer:    flags[TracerFlag] == entity.BoolTrue,
+		Logger:    flags[LoggerFlag] == entity.BoolTrue,
 	}, nil
 }
 

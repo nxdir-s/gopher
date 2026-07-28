@@ -94,7 +94,7 @@ These fail loudly on a malformed registry, long before a user would hit it.
 |---|---|
 | `TestRegistryIsWellFormed` | unique type per spec; non-empty summary; ≥1 template ref with both `Name` and `Out`; unique flag names; every flag has `Usage`; no required-flag-with-default; bool defaults are literally `"true"`/`"false"` |
 | `TestRegistryTemplatesResolve` | every static template name (no `{{`) exists in the embedded set |
-| `TestKindsHaveTemplates` | every advertised kind in `AdapterKinds`, `ValobjKinds`, `ModuleKinds` has a template |
+| `TestKindsHaveTemplates` | every advertised kind in `AdapterKinds()`, `ValobjKinds()`, `ModuleKinds()` has a template. `PortSides()` is excluded — a side names the ports file a declaration is appended to, not a template |
 
 `TestRegistryTemplatesResolve` skips names containing `{{`, since those resolve
 per-request. `TestKindsHaveTemplates` is what covers those.

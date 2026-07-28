@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -100,10 +101,12 @@ func TestRegistryTemplatesResolve(t *testing.T) {
 func TestKindsHaveTemplates(t *testing.T) {
 	store := adapters.NewStoreAdapter(templates.FS, templates.Root)
 
+	// PortSides is absent on purpose: a side names the ports file the
+	// declaration is appended to, not a template of its own
 	kinds := map[string][]string{
-		"adapter": AdapterKinds,
-		"valobj":  ValobjKinds,
-		"module":  ModuleKinds,
+		"adapter": AdapterKinds(),
+		"valobj":  ValobjKinds(),
+		"module":  ModuleKinds(),
 	}
 
 	for prefix, names := range kinds {
@@ -114,6 +117,44 @@ func TestKindsHaveTemplates(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestDefaultKindsAreAdvertised checks that the value a kind flag falls back to
+// is one the flag offers. The list and the default are separate constants, so
+// nothing else keeps a default from naming a kind that was renamed or dropped
+func TestDefaultKindsAreAdvertised(t *testing.T) {
+	registry := NewRegistry()
+
+	tests := []struct {
+		genType    valobj.GenType
+		flag       string
+		advertised []string
+	}{
+		{genType: valobj.GenAdapter, flag: KindFlag, advertised: AdapterKinds()},
+		{genType: valobj.GenValobj, flag: KindFlag, advertised: ValobjKinds()},
+		{genType: valobj.GenModule, flag: KindFlag, advertised: ModuleKinds()},
+		{genType: valobj.GenPort, flag: SideFlag, advertised: PortSides()},
+	}
+
+	for i := range tests {
+		test := tests[i]
+
+		t.Run(test.genType.String(), func(t *testing.T) {
+			spec, err := registry.Spec(test.genType)
+			if err != nil {
+				t.Fatalf("unexpected error: %s", err.Error())
+			}
+
+			flagSpec, ok := spec.Flag(test.flag)
+			if !ok {
+				t.Fatalf("%s declares no %s flag", test.genType, test.flag)
+			}
+
+			if !slices.Contains(test.advertised, flagSpec.Default) {
+				t.Errorf("%s -%s defaults to %q, which it does not advertise: %s", test.genType, test.flag, flagSpec.Default, strings.Join(test.advertised, ", "))
+			}
+		})
 	}
 }
 

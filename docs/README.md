@@ -42,7 +42,7 @@ for coding agents. If you change a constraint here, change it there too.
 
 | I want to… | Touch |
 |---|---|
-| Add an adapter kind | `templates/files/adapter/<kind>.tmpl` + `AdapterKinds` in `internal/core/domain/registry.go` |
+| Add an adapter kind | `templates/files/adapter/<kind>.tmpl` + `AdapterKinds()` in `internal/core/domain/registry.go` |
 | Add a flag to a type | that type's `GenSpec.Flags` in `internal/core/domain/registry.go` — **not** `internal/adapters/cli.go` |
 | Change what a type emits | its `.tmpl` under `templates/files/`, then refresh goldens |
 | Add a whole new type | [adding-a-type.md](adding-a-type.md) |
