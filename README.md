@@ -1,4 +1,4 @@
-# gopher
+![gopher — Go code, templates, and project scaffolding that follow a fixed set of conventions](docs/assets/banner.svg)
 
 `gopher` generates Go code, templates, and project scaffolding that follow a
 fixed set of conventions.
@@ -87,6 +87,8 @@ with the same name is a no-op.
 `-kind http` writes its companion types at fixed paths and never touches them
 again — a second http adapter, or one generated after you have edited
 `entity.Request`, reports them as `unchanged`. Pass `-force` to restore them.
+
+![the generate pipeline — argv through templates and go/format to files on disk](docs/assets/pipeline.svg)
 
 ## Customizing the templates
 

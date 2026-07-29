@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 300" width="880" height="300" role="img" aria-label="gopher — Go code, templates, and project scaffolding that follow a fixed set of conventions">
+  <title>gopher</title>
+  <rect x="0.5" y="0.5" width="879" height="299" rx="16" fill="#0d1117" stroke="#30363d"/>
+  <circle cx="28" cy="30" r="6.5" fill="#4a7c63"/>
+  <circle cx="50" cy="30" r="6.5" fill="#4a7ab5"/>
+  <circle cx="72" cy="30" r="6.5" fill="#6e7681"/>
+  <line x1="1" y1="52" x2="879" y2="52" stroke="#21262d"/>
+  <g font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace">
+    <text x="440" y="150" text-anchor="middle" font-size="64" letter-spacing="2" fill="#e6edf3">gopher</text>
+    <text x="440" y="192" text-anchor="middle" font-size="19" fill="#8b949e">Go code · templates · scaffolding — one fixed set of conventions</text>
+    <text x="225" y="248" font-size="18" textLength="11" lengthAdjust="spacingAndGlyphs" fill="#4a7c63">$</text>
+    <text x="247" y="248" font-size="18" textLength="376" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">gopher generate adapter -kind http</text>
+  </g>
+  <rect x="633" y="234" width="10" height="19" fill="#4a7c63"/>
+</svg>
