@@ -30,13 +30,13 @@ gopher templates init|list       # export and inspect the templates
 
 Every `generate` command accepts:
 
-| Flag | Effect |
-|---|---|
-| `-out` | directory the files are written to (default `.`) |
-| `-module` | module path; defaults to the `go.mod` covering `-out` |
-| `-stdout` | print the source instead of writing it |
-| `-dry-run` | print the paths that would be written |
-| `-force` | overwrite existing files |
+| Flag       | Effect                                                |
+| ---------- | ----------------------------------------------------- |
+| `-out`     | directory the files are written to (default `.`)      |
+| `-module`  | module path; defaults to the `go.mod` covering `-out` |
+| `-stdout`  | print the source instead of writing it                |
+| `-dry-run` | print the paths that would be written                 |
+| `-force`   | overwrite existing files                              |
 
 Existing files are never overwritten without `-force`, and every rendered Go
 file is passed through `go/format` — a template that produces source which does
@@ -44,23 +44,20 @@ not parse fails the command instead of writing garbage.
 
 ### Types
 
-| Type | Generates |
-|---|---|
-| `setup` | a whole hexagonal project: `cmd/`, `internal/{adapters,core,ports,config,logs}`, `go.mod`, `Makefile`, `CLAUDE.md` |
-| `adapter` | a secondary adapter — `kafka`, `postgres`, `http`, `aws`, `google`, `cmd`, `tmux`, `toml`, `zip`, or a `generic` skeleton |
+| Type           | Generates                                                                                                                           |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `setup`        | a whole hexagonal project: `cmd/`, `internal/{adapters,core,ports,config,logs}`, `go.mod`, `Makefile`, `CLAUDE.md`                  |
+| `adapter`      | a secondary adapter — `kafka`, `postgres`, `http`, `aws`, `google`, `cmd`, `tmux`, `toml`, `zip`, or a `generic` skeleton           |
 | ↳ `-kind http` | also emits the types it is written against: `entity.Request`, `entity.Response`, `valobj.{Method,BodyType,Header,FormField,Timing}` |
-| `server` | an http server primary adapter with graceful shutdown |
-| `entity` | a domain object type |
-| `valobj` | a value object, either a `struct` or an `enum` with `String`/`MarshalJSON`/`Parse` |
-| `domain` | an orchestrator wired to the ports it drives |
-| `port` | an interface appended to `internal/ports/{core,primary,secondary}.go` |
-| `module` | an internal module — `logs`, `config`, `observability`, or `generic` |
-| `mocks` | a hand-written fake with call counts, from an interface's methods |
-| `test` | a table-driven test |
-| `infra` | an AWS CDK stack in Go, as its own module under `infra/` |
-
-There is no `service` type — `domain` is the orchestrator in this architecture,
-and a second concept for the same role would only invite drift.
+| `server`       | an http server primary adapter with graceful shutdown                                                                               |
+| `entity`       | a domain object type                                                                                                                |
+| `valobj`       | a value object, either a `struct` or an `enum` with `String`/`MarshalJSON`/`Parse`                                                  |
+| `domain`       | an orchestrator wired to the ports it drives                                                                                        |
+| `port`         | an interface appended to `internal/ports/{core,primary,secondary}.go`                                                               |
+| `module`       | an internal module — `logs`, `config`, `observability`, or `generic`                                                                |
+| `mocks`        | a hand-written fake with call counts, from an interface's methods                                                                   |
+| `test`         | a table-driven test                                                                                                                 |
+| `infra`        | an AWS CDK stack in Go, as its own module under `infra/`                                                                            |
 
 ### Examples
 
@@ -155,11 +152,11 @@ what `gopher generate setup` produces.
 
 Engineering docs live in [docs/](docs/):
 
-| Doc | |
-|---|---|
-| [docs/architecture.md](docs/architecture.md) | package map, port catalog, the dependency rule |
-| [docs/pipeline.md](docs/pipeline.md) | argv → bytes on disk, the three artifact modes |
-| [docs/templates.md](docs/templates.md) | authoring templates: the data contract and gotchas |
-| [docs/adding-a-type.md](docs/adding-a-type.md) | worked walkthroughs plus a checklist |
-| [docs/testing.md](docs/testing.md) | golden workflow, and what is really compile-checked |
-| [docs/decisions.md](docs/decisions.md) | why things are the way they are |
+| Doc                                            |                                                     |
+| ---------------------------------------------- | --------------------------------------------------- |
+| [docs/architecture.md](docs/architecture.md)   | package map, port catalog, the dependency rule      |
+| [docs/pipeline.md](docs/pipeline.md)           | argv → bytes on disk, the three artifact modes      |
+| [docs/templates.md](docs/templates.md)         | authoring templates: the data contract and gotchas  |
+| [docs/adding-a-type.md](docs/adding-a-type.md) | worked walkthroughs plus a checklist                |
+| [docs/testing.md](docs/testing.md)             | golden workflow, and what is really compile-checked |
+| [docs/decisions.md](docs/decisions.md)         | why things are the way they are                     |
