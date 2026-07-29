@@ -88,8 +88,6 @@ with the same name is a no-op.
 again — a second http adapter, or one generated after you have edited
 `entity.Request`, reports them as `unchanged`. Pass `-force` to restore them.
 
-![the generate pipeline — argv through templates and go/format to files on disk](docs/assets/pipeline.svg)
-
 ## Customizing the templates
 
 Templates resolve in this order, first match wins:
