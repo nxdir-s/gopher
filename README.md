@@ -1,16 +1,16 @@
-![gopher — Go code, templates, and project scaffolding that follow a fixed set of conventions](docs/assets/banner.svg)
+![gopher: Go code, templates, and project scaffolding that follow a fixed set of conventions](docs/assets/banner.svg)
 
 `gopher` generates Go code, templates, and project scaffolding that follow a
 fixed set of conventions.
 
-AI-generated Go drifts from personal standards — architecture, naming, error
-handling, telemetry, spacing — and fixing it by hand after every generation is
+AI-generated Go drifts from personal standards (architecture, naming, error
+handling, telemetry, spacing), and fixing it by hand after every generation is
 slow. gopher inverts that: the style lives in versioned templates, and the model
 calls a CLI to instantiate them. Claude Code runs `gopher generate`, gets
 correctly-styled files, then adapts them with full project context.
 
-The binary has **no third-party dependencies** — the standard library plus one
-first-party, stdlib-only module
+The binary has **no third-party dependencies**: just the standard library plus
+one first-party, stdlib-only module
 ([pipelines](https://github.com/nxdir-s/pipelines), which fans out rendering).
 
 ## Install
@@ -39,22 +39,22 @@ Every `generate` command accepts:
 | `-force`   | overwrite existing files                              |
 
 Existing files are never overwritten without `-force`, and every rendered Go
-file is passed through `go/format` — a template that produces source which does
-not parse fails the command instead of writing garbage.
+file is passed through `go/format`, so a template that produces source which
+doesn't parse fails the command instead of writing garbage.
 
 ### Types
 
 | Type           | Generates                                                                                                                           |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `setup`        | a whole hexagonal project: `cmd/`, `internal/{adapters,core,ports,config,logs}`, `go.mod`, `Makefile`, `CLAUDE.md`                  |
-| `adapter`      | a secondary adapter — `kafka`, `postgres`, `http`, `aws`, `google`, `cmd`, `tmux`, `toml`, `zip`, or a `generic` skeleton           |
+| `adapter`      | a secondary adapter: `kafka`, `postgres`, `http`, `aws`, `google`, `cmd`, `tmux`, `toml`, `zip`, or a `generic` skeleton            |
 | ↳ `-kind http` | also emits the types it is written against: `entity.Request`, `entity.Response`, `valobj.{Method,BodyType,Header,FormField,Timing}` |
 | `server`       | an http server primary adapter with graceful shutdown                                                                               |
 | `entity`       | a domain object type                                                                                                                |
 | `valobj`       | a value object, either a `struct` or an `enum` with `String`/`MarshalJSON`/`Parse`                                                  |
 | `domain`       | an orchestrator wired to the ports it drives                                                                                        |
 | `port`         | an interface appended to `internal/ports/{core,primary,secondary}.go`                                                               |
-| `module`       | an internal module — `logs`, `config`, `observability`, or `generic`                                                                |
+| `module`       | an internal module: `logs`, `config`, `observability`, or `generic`                                                                 |
 | `mocks`        | a hand-written fake with call counts, from an interface's methods                                                                   |
 | `test`         | a table-driven test                                                                                                                 |
 | `infra`        | an AWS CDK stack in Go, as its own module under `infra/`                                                                            |
@@ -85,7 +85,7 @@ target, appends the interface, and unions the import blocks. Running it twice
 with the same name is a no-op.
 
 `-kind http` writes its companion types at fixed paths and never touches them
-again — a second http adapter, or one generated after you have edited
+again. A second http adapter, or one generated after you've edited
 `entity.Request`, reports them as `unchanged`. Pass `-force` to restore them.
 
 ## Customizing the templates

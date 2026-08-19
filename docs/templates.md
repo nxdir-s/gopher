@@ -5,7 +5,7 @@ Templates live in `templates/files/` and are compiled into the binary with
 
 ## Lookup
 
-A template is referenced by name without the extension — `adapter/kafka`,
+A template is referenced by name without the extension, like `adapter/kafka` or
 `http/request`. `StoreAdapter.Load` in `internal/adapters/store.go` resolves it
 against, in order:
 
@@ -16,11 +16,11 @@ against, in order:
 ```
 
 First match wins, per file. A user who overrides `adapter/kafka.tmpl` still gets
-the embedded everything-else. `gopher templates list` prints where each name
-currently resolves from; `gopher templates init` exports the embedded set for
-editing.
+the embedded set for everything else. `gopher templates list` prints where each
+name currently resolves from; `gopher templates init` exports the embedded set
+for editing.
 
-The `files/` prefix exists so `go:embed all:files` cannot swallow
+The `files/` prefix exists so `go:embed all:files` can't swallow
 `templates.go` itself. `templates.Root` holds it; the store strips it.
 
 ## The data contract
@@ -46,7 +46,7 @@ safe to write, so treat changes to it as breaking.
 
 `Flags` and `Lists` are populated for **every flag the spec declares**, so
 `.Flags.side` and `range .Lists.method` are always safe. Indexing a key the spec
-does not declare is a hard error: the renderer sets `missingkey=error`, which
+doesn't declare is a hard error: the renderer sets `missingkey=error`, which
 turns a typo into a failed command rather than a silent `<no value>`.
 
 ### Naming
@@ -72,7 +72,7 @@ separators, case transitions, and acronym boundaries, then derives:
 ### Methods
 
 `-method` strings are parsed into structured form by
-`GoSourceAdapter.Methods` — it wraps them in a synthetic interface, parses that
+`GoSourceAdapter.Methods`: it wraps them in a synthetic interface, parses that
 with `go/parser`, and returns `Name`, `Params`, `Results`, `Args`, and
 `HasResults`. `Args` is the forwarding call, so `mocks/fake.tmpl` can write:
 
@@ -96,16 +96,16 @@ lower   upper  contains  join     strings
 
 ## Gating patterns
 
-**Conditional file** — an `Out` that renders empty drops the artifact:
+**Conditional file.** An `Out` that renders empty drops the artifact:
 
 ```go
 {Name: "setup/gomod", Out: `{{if eq .Flags.gomod "true"}}go.mod{{end}}`},
 ```
 
-**Conditional block** — the usual `{{if}}`, seen throughout
+**Conditional block.** The usual `{{if}}`, seen throughout
 `templates/files/adapter/generic.tmpl` for the tracer and logger toggles.
 
-**Scan-then-decide** — template variables are assignable, so a template can walk
+**Scan-then-decide.** Template variables are assignable, so a template can walk
 its inputs before emitting anything. `templates/files/port/interface.tmpl` uses
 this to import `context` only when a method signature mentions it:
 
@@ -134,7 +134,7 @@ its own trailing newline. With the logger on you get a blank line before
 this wrong produces output that compiles and looks subtly wrong, which the
 golden files will catch.
 
-Empty composite literals need the same care — gofmt leaves `struct {\n}` alone,
+Empty composite literals need the same care. gofmt leaves `struct {\n}` alone,
 so branch on it:
 
 ```
@@ -149,14 +149,14 @@ type {{.Name.Pascal}} struct{}
 
 ## Imports are the template's job
 
-`go/format` formats and syntax-checks. It does **not** add or remove imports —
-that would need `golang.org/x/tools/imports`, which would be gopher's first
-dependency (see [decisions.md](decisions.md)).
+`go/format` formats and syntax-checks. It does **not** add or remove imports.
+That would need `golang.org/x/tools/imports`, which would be gopher's first
+third-party dependency (see [decisions.md](decisions.md)).
 
 So every template carries a complete import block, and any generator whose
 output can reference arbitrary types exposes a repeatable `-import` flag:
 `entity`, `valobj`, `domain`, `port`, and `mocks`. A field typed `time.Time`
-needs `-import time`, and gopher will not infer it.
+needs `-import time`, and gopher won't infer it.
 
 The one place imports are computed rather than declared is append mode:
 `GoSourceAdapter.Merge` unions the two files' import blocks and re-emits them
@@ -179,7 +179,7 @@ Two things in there look like bugs and are deliberate:
 
 The non-adapter templates (`core/`, `valobj/`, `port/`, `setup/`, `server/`,
 `mocks/`, `test/`, `module/`, `http/`, `infra/`) have no upstream source and are
-ordinary code — improve them freely, then refresh the goldens.
+ordinary code. Improve them freely, then refresh the goldens.
 
 ## After editing any template
 

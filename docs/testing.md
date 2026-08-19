@@ -1,8 +1,8 @@
 # Testing
 
 ~2,000 lines of tests across four packages. The thing to understand before
-changing templates is **what the tests actually prove** — and the honest answer
-is that most templates are checked for syntax, not for types.
+changing templates is **what the tests actually prove**. The honest answer is
+that most templates are checked for syntax, not for types.
 
 ```bash
 go test ./...                          # everything
@@ -24,7 +24,7 @@ make bench                             # benchmarks, which no test run touches
 | Bench | `internal/adapters/bench_test.go`, `cli_bench_test.go`, `internal/core/domain/bench_test.go`, `internal/config/bench_test.go`, `cmd/gopher/bench_test.go` | what the pipeline costs, per layer |
 
 Create-mode refs render concurrently, so any change to the generator or an
-adapter it drives must also pass the race detector — the `setup` and `infra`
+adapter it drives must also pass the race detector. The `setup` and `infra`
 golden cases push the fanned path through it:
 
 ```bash
@@ -36,54 +36,54 @@ go test -race ./internal/core/domain/ ./internal/adapters/
 `internal/core/domain/testdata/*.golden` are the regression net for template
 drift. Each is the concatenation of every artifact a request produces, prefixed
 with `// <path>` headers, rendered through the **real** registry, store,
-renderer, and formatter — only the writer is faked.
+renderer, and formatter. Only the writer is faked.
 
 ```bash
 GOPHER_UPDATE_GOLDEN=1 go test ./...
 git diff internal/core/domain/testdata/
 ```
 
-**Read the diff before accepting it.** That is the entire review step for a
+**Read the diff before accepting it.** That's the entire review step for a
 template change. An unexpected golden change means a template changed behavior.
 
 Refreshing is driven by an environment variable rather than a `-update` flag
-because `go test ./... -update` fails in every package that does not define the
+because `go test ./... -update` fails in every package that doesn't define the
 flag, which makes a repo-wide refresh impossible. The constant is `UpdateEnv` in
 `golden_test.go`.
 
-Two cases deliberately generate with `go.mod` switched off — `setup` and
-`infra`. Their `go.mod` embeds `GoVersion`, which tracks the toolchain gopher
+Two cases, `setup` and `infra`, deliberately generate with `go.mod` switched
+off. Their `go.mod` embeds `GoVersion`, which tracks the toolchain gopher
 was built with, and would make the golden fail on a different Go version. The
 compile checks cover those files instead.
 
 ## What is really type-checked
 
-Goldens prove output *parses* — `go/format` rejects anything that does not.
+Goldens prove output *parses*: `go/format` rejects anything that doesn't.
 Only `go build` proves it *type-checks*, and that needs the imports to resolve.
-Templates with third-party imports cannot be built in a hermetic test, so:
+Templates with third-party imports can't be built in a hermetic test, so:
 
 | Verified by | Templates |
 |---|---|
 | `go build` + `go vet` | `generic`, `cmd`, `zip`, `entity`, `valobj`, `domain`, `port`, `setup`, `server`, `mocks`, `test`, the stdlib `module` kinds, the `http` companions |
 | `go/format` + golden only | `kafka`, `postgres`, `http`, `aws`, `google`, `toml`, `tmux`, `observability`, `infra` |
 
-A type error in the second group — a renamed field, a wrong argument count —
-**will not be caught by CI**. Check those by hand when editing.
+A type error in the second group, like a renamed field or a wrong argument
+count, **will not be caught by CI**. Check those by hand when you edit.
 
 The compile tests write into a `t.TempDir()` with a synthetic `go.mod`, run
 `go build ./...` and sometimes `go vet ./...`, and skip when `-short` is set or
 no `go` binary is on `PATH`.
 
 The most valuable of them is `TestCoreTypesCompileTogether`: it generates an
-entity, two ports, and a domain that drives them, into one module. That is the
+entity, two ports, and a domain that drives them, into one module. That's the
 test that catches a mismatch between the port append path and the module-aware
-imports — the pieces only fail together.
+imports, because the pieces only fail together.
 
 ### The http adapter
 
 `adapter -kind http` is the one case where two template groups must agree and
 nothing in CI proves they do. The adapter is written against the companion types
-in `templates/files/http/`, but it imports `golang.org/x/oauth2`, so it cannot be
+in `templates/files/http/`, but it imports `golang.org/x/oauth2`, so it can't be
 built offline. `TestHttpCompanionsCompile` renders the pair, writes only the
 companions, and builds those.
 
@@ -104,7 +104,7 @@ These fail loudly on a malformed registry, long before a user would hit it.
 |---|---|
 | `TestRegistryIsWellFormed` | unique type per spec; non-empty summary; ≥1 template ref with both `Name` and `Out`; unique flag names; every flag has `Usage`; no required-flag-with-default; bool defaults are literally `"true"`/`"false"` |
 | `TestRegistryTemplatesResolve` | every static template name (no `{{`) exists in the embedded set |
-| `TestKindsHaveTemplates` | every advertised kind in `AdapterKinds()`, `ValobjKinds()`, `ModuleKinds()` has a template. `PortSides()` is excluded — a side names the ports file a declaration is appended to, not a template |
+| `TestKindsHaveTemplates` | every advertised kind in `AdapterKinds()`, `ValobjKinds()`, `ModuleKinds()` has a template. `PortSides()` is excluded: a side names the ports file a declaration is appended to, not a template |
 
 `TestRegistryTemplatesResolve` skips names containing `{{`, since those resolve
 per-request. `TestKindsHaveTemplates` is what covers those.
@@ -112,7 +112,7 @@ per-request. `TestKindsHaveTemplates` is what covers those.
 ## Fakes, not mocks
 
 `internal/adapters/fake` holds hand-written in-memory implementations of the
-secondary ports — `fake.Store` for `TemplateSource`/`TemplateCatalog`,
+secondary ports: `fake.Store` for `TemplateSource`/`TemplateCatalog` and
 `fake.Writer` for `FileWriter`. They record rather than assert, matching the
 interface-at-the-boundary style the generated code uses. `gopher generate mocks`
 emits the same shape.
@@ -122,9 +122,9 @@ property.
 
 Domain tests build a generator two ways:
 
-- `newTestGenerator` — a hand-built spec over `fake.Store`, for engine behavior
+- `newTestGenerator`: a hand-built spec over `fake.Store`, for engine behavior
   in isolation (clobber, force, dry-run, invalid Go, missing flags)
-- `newEmbeddedGenerator` / `newEmbeddedGeneratorWith` — the real registry and
+- `newEmbeddedGenerator` / `newEmbeddedGeneratorWith`: the real registry and
   real embedded templates, for goldens and compile checks
 
 Reach for the first when testing the *engine*, the second when testing
@@ -132,12 +132,12 @@ Reach for the first when testing the *engine*, the second when testing
 
 ## Benchmarks
 
-The performance model behind these numbers — where the time actually goes,
-the floors that will not move, and the optimization history — is in
-[performance](performance.md).
+The performance model behind these numbers is in [performance](performance.md):
+where the time actually goes, the floors that won't move, and the optimization
+history.
 
-Benchmarks measure, they do not assert. Nothing fails on a slow number and no
-baseline is checked in — the comparison is something you run deliberately,
+Benchmarks measure, they don't assert. Nothing fails on a slow number, and no
+baseline is checked in. The comparison is something you run deliberately,
 against a run you captured yourself.
 
 ```bash
@@ -155,10 +155,11 @@ compile checks included, before the first benchmark.
 **An optimization is only real if it moves `BenchmarkGenerateCold`.**
 
 Nothing caches a parsed template, and the obvious fix is to add a cache. But
-within a single invocation every template string the renderer sees is distinct —
-`setup` performs 42 parses across 14 refs and repeats none of them. A cache keyed
-by template text has a ~0% hit rate for one process, and a ~100% hit rate in a
-benchmark that reuses one generator across thousands of iterations.
+within a single invocation, every template string the renderer sees is
+distinct: `setup` performs 42 parses across 14 refs and never repeats one. A
+cache keyed by template text has a ~0% hit rate for one process, and a ~100%
+hit rate in a benchmark that reuses one generator across thousands of
+iterations.
 
 So the two exist as a pair:
 
@@ -182,23 +183,23 @@ will ever run.
 | `Load`, `FindModule`, `Run`, `Startup` | config resolution and startup, in and out of process |
 
 Everything writes to an in-memory `fake.Writer` except `GenerateDisk`, `FsWrite`
-and `Startup`, which are the only three that touch the disk or spawn a process —
+and `Startup`, which are the only three that touch the disk or spawn a process.
 `make bench BENCH='Disk|Fs|Startup'` selects exactly that set.
 
 Every benchmark in the `Generate` family except `GenerateOverrides` builds its
-store with **no override directories**, which is not how `config.TemplateDirs`
-wires one — it always returns the user directory and never checks that anything
+store with **no override directories**, which isn't how `config.TemplateDirs`
+wires one: it always returns the user directory and never checks that anything
 exists. So the lookup chain those runs measure is one embedded read, while a
 real invocation pays a failed `os.ReadFile` per configured directory per
 template first. `GenerateOverrides` is the one that models production, with two
-directories that do not exist ahead of the embedded defaults. Read it against
+directories that don't exist ahead of the embedded defaults. Read it against
 `GenerateCold`, whose labels it shares, to see what resolution costs.
 
 `BenchmarkStartup` is a budget, not a target: process spawn is milliseconds and
-dwarfs a generate measured in microseconds. It is useful for two subtractions —
+dwarfs a generate measured in microseconds. It's useful for two subtractions:
 `generate_entity` minus `version` gives the generate delta at process scale, and
 `BenchmarkStartup/version` minus `BenchmarkRun/version` gives the spawn overhead
-that is not gopher's to fix.
+that isn't gopher's to fix.
 
 ### Comparing runs
 
@@ -212,7 +213,7 @@ make bench BENCHFLAGS='-count 10' > new.out
 go run golang.org/x/perf/cmd/benchstat@latest old.out new.out
 ```
 
-`-count 10` is not optional. Below six samples benchstat prints `± ∞` and
+`-count 10` isn't optional. Below six samples benchstat prints `± ∞` and
 refuses to give a confidence interval at all. Both runs need identical flags,
 which is why `-benchmem` and `-run '^$'` live inside the target rather than in
 the command you type.
@@ -221,8 +222,8 @@ the command you type.
 
 Calibrate against the machine before trusting a result. Two identical runs of
 the `Generate` set on an M2 Pro land within 1–3.5% of each other, and benchstat
-calls several of those differences significant — a low `p` means the difference
-is consistent, not that it is large enough to care about. Anything under about
+calls several of those differences significant. A low `p` means the difference
+is consistent, not that it's large enough to care about. Anything under about
 5% is the floor, not a finding. Close everything else, stay plugged in, and run
 it twice against itself first. On macOS, work migrating between performance and
 efficiency cores is the usual cause.
@@ -235,7 +236,7 @@ the names flat, lowercase, and one `/` deep.
 
 Use `for b.Loop()`, not `for i := 0; i < b.N; i++`. It resets the timer when the
 loop starts, so setup in the same function is already excluded, and it keeps
-arguments and results alive, so no sink variable is needed — which matters here,
+arguments and results alive, so no sink variable is needed. That matters here,
 because a package-level sink would break the no-package-level-variables rule in
 [decisions.md](decisions.md).
 
@@ -243,12 +244,12 @@ Watch for state carried between iterations. Requests run with `Stdout` set
 because that returns before the existence check and the write loop, leaving the
 fake writer untouched; `BenchmarkGenerateWrite` sets `Force` instead, because
 otherwise the second iteration hits the clobber check and quietly measures the
-error path. To find a leak, run at two iteration counts and compare — a number
+error path. To find a leak, run at two iteration counts and compare: a number
 that drifts more than ~10% depends on how many iterations preceded it.
 
 Give both counts enough iterations to be meaningful. A sub-microsecond
 benchmark like `NewNaming` reads roughly 2x high at `-benchtime 20000x` and
-only settles from about `200000x`, which looks exactly like a leak and is not
+only settles from about `200000x`, which looks exactly like a leak and isn't
 one.
 
 Anything reading config or the store's default directories needs
@@ -260,7 +261,7 @@ If you add a request to `benchRequests`, add its artifact count to
 standing between a benchmark and measuring nothing: a request whose flags drift
 out of step with its spec still generates without error and still reports a
 stable number, it just stops covering what its name says it does. The goldens
-do not help here — they run off a table of their own.
+don't help here, because they run off a table of their own.
 
 ## Adding a test
 

@@ -1,12 +1,12 @@
 # Architecture
 
 gopher is hexagonal: inputs and outputs sit at the edges, and the core knows
-nothing about the CLI it is driven by or the filesystem it writes to.
+nothing about the CLI that drives it or the filesystem it writes to.
 
-That is partly dogfooding — `gopher generate setup` emits this exact shape, so
-the repo doubles as a reference for its own output — and partly practical. The
+That's partly dogfooding: `gopher generate setup` emits this exact shape, so
+the repo doubles as a reference for its own output. It's also practical. The
 core is where the interesting logic lives (spec resolution, render ordering,
-merge semantics), and it is tested against in-memory fakes with no disk access.
+merge semantics), and it's tested against in-memory fakes with no disk access.
 
 ## Package map
 
@@ -14,7 +14,7 @@ merge semantics), and it is tested against in-memory fakes with no disk access.
 cmd/gopher/main.go          wire dependencies, dispatch, exit code
 internal/
   adapters/
-    cli.go                  PRIMARY adapter — flag sets, dispatch, help, reporting
+    cli.go                  PRIMARY adapter: flag sets, dispatch, help, reporting
     store.go                template lookup chain: project → user → embedded
     template.go             text/template execution + the func map
     format.go               go/format; doubles as the "is this valid Go?" gate
@@ -26,7 +26,7 @@ internal/
     domain/
       generator.go          the engine: request → artifacts
       catalog.go            template listing and export
-      registry.go           THE REGISTRY — one GenSpec per type
+      registry.go           THE REGISTRY: one GenSpec per type
     entity/                 GenSpec, TemplateRef, Artifact, Request, TemplateData
     valobj/                 GenType, Naming, Field, Method
   logs/logger.go            slog setup; writes to stderr so it never mixes with -stdout
@@ -86,7 +86,7 @@ what the core drives, `core.go` is internal collaboration.
 | `GoSource` | `secondary.go` | `adapters.GoSourceAdapter` | `domain.Generator` |
 
 `Registry` sits in `core.go` rather than `primary.go` because the CLI reading it
-for `list`/`describe` is incidental — its real job is letting `domain.Generator`
+for `list`/`describe` is incidental. Its real job is letting `domain.Generator`
 resolve a spec without knowing where specs come from.
 
 `TemplateCatalog` embeds `TemplateSource` and adds `List`, `Embedded`, and
@@ -110,7 +110,7 @@ github.com/nxdir-s/gopher/internal/core/valobj
 github.com/nxdir-s/gopher/internal/ports
 ```
 
-Grep gives a false positive here — `internal/core/domain/registry.go` contains
+Grep gives a false positive here. `internal/core/domain/registry.go` contains
 the string `internal/adapters` many times, but as *output paths* in
 `TemplateRef.Out` values, not as imports:
 
@@ -120,7 +120,7 @@ the string `internal/adapters` many times, but as *output paths* in
 
 Test files are the deliberate exception: `internal/core/domain/*_test.go` import
 `internal/adapters` to build a generator over the real store, renderer, and
-formatter. That is the point of the tests — they exercise the wiring `main.go`
+formatter. That's the point of the tests: they exercise the wiring `main.go`
 does.
 
 ## Composition
@@ -139,7 +139,7 @@ behavior is small and worth reading in full:
 | File | Lines | Why it matters |
 |---|---|---|
 | `internal/core/domain/generator.go` | 440 | The whole engine. See [pipeline.md](pipeline.md) |
-| `internal/core/domain/registry.go` | 577 | Data, not logic — 11 specs. The system's shape |
+| `internal/core/domain/registry.go` | 577 | Data, not logic: 11 specs. The system's shape |
 | `internal/adapters/cli.go` | 618 | Flag sets built from specs; add commands here, not types |
 | `internal/adapters/gosource.go` | 380 | AST merge and signature parsing. The subtlest code here |
 | `internal/config/config.go` | 265 | Precedence and module detection |

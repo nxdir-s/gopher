@@ -2,16 +2,16 @@
 
 Why the codebase is the way it is, and what was rejected. Roughly chronological.
 
-Read this before "fixing" something that looks wrong — several of these were
-deliberate and are easy to undo by accident.
+Read this before "fixing" something that looks wrong. Several of these choices
+were deliberate, and they're easy to undo by accident.
 
 ---
 
 ## Zero dependencies, one first-party exception
 
-`go.mod` requires exactly one module — `github.com/nxdir-s/pipelines`, the
-first-party fan-out/fan-in helpers behind concurrent rendering — and nothing
-else, ever. It is MIT, stdlib-only, and has no dependencies of its own, so the
+`go.mod` requires exactly one module (`github.com/nxdir-s/pipelines`, the
+first-party fan-out/fan-in helpers behind concurrent rendering) and nothing
+else, ever. It's MIT, stdlib-only, and has no dependencies of its own, so the
 transitive closure of gopher is still gopher. Everything else runs on
 `text/template`, `go/format`, `go/parser`, `embed`, `encoding/json`,
 `log/slog`, and `flag`.
@@ -21,13 +21,13 @@ a loop. A single self-contained binary with nothing external to resolve is worth
 real constraints, and a first-party leaf module preserves that property.
 
 **Rejected:** `urfave/cli` and `spf13/cobra` for the CLI, `go-toml/v2` for
-config — third-party trees with real transitive closures. Also rejected:
+config: third-party trees with real transitive closures. Also rejected:
 copying the fan-out/fan-in shapes into gopher to keep the `require` block
 empty. They are maintained and tested once in `pipelines`; duplicating them
 here trades one require line for silent drift between the copies.
 
 **Consequences:** config is JSON rather than TOML, despite `spec.md` showing a
-`TomlAdapter` — that adapter is a *template*, and templates' dependencies belong
+`TomlAdapter`. That adapter is a *template*, and templates' dependencies belong
 to generated code, not to gopher. Also, no `goimports`; see below.
 
 ## stdlib `flag` with hand-rolled dispatch
@@ -39,15 +39,15 @@ to generated code, not to gopher. Also, no `goimports`; see below.
 non-flag argument. `gopher describe adapter -json` silently ignored `-json`,
 because `adapter` terminated parsing. Fixed by `splitPositional` in
 `internal/adapters/cli.go`, which lifts the positional out before parsing.
-`generate` does not use it — its flags take values, so a value could be mistaken
-for the type name; it takes the type from `args[0]` strictly.
+`generate` doesn't use it, because its flags take values and a value could be
+mistaken for the type name; it takes the type from `args[0]` strictly.
 
 ## The registry is the single source of truth
 
 One `entity.GenSpec` per type in `internal/core/domain/registry.go`, driving CLI
 flag registration, `describe` output, and template selection.
 
-The alternative — a `switch` in the CLI per type — means adding a type touches
+The alternative, a `switch` in the CLI per type, means adding a type touches
 argument parsing, help text, and generation separately, and they drift. The rule
 that falls out: **adding a type must never require editing `cli.go`.**
 
@@ -57,7 +57,7 @@ that falls out: **adding a type must never require editing `cli.go`.**
 then per user (see [templates.md](templates.md)).
 
 `spec.md` asked for user-configurable templates. Overrides are matched per file
-by name, so replacing one template inherits the rest — a full-copy model would
+by name, so replacing one template inherits the rest. A full-copy model would
 mean a user's fork silently misses every later improvement.
 
 ## gopher is laid out like its own output
@@ -80,7 +80,7 @@ While transcribing `postgres.tmpl` I "improved" `validStatement` from
 reverted it. The whole point of the tool is that its output matches what the
 author would have written; a generator that quietly rewrites your idioms is the
 problem it exists to solve. The same reasoning leaves that function's
-short-input panic in place — inherited, not introduced.
+short-input panic in place: inherited, not introduced.
 
 This applies **only** to `adapter/`. Every other template directory has no
 upstream source and is ordinary code.
@@ -88,13 +88,13 @@ upstream source and is ordinary code.
 ## `go/format` as validator, no import fixing
 
 Rendered `.go` output goes through `go/format.Source`. A template producing
-source that does not parse fails the command instead of writing garbage, and the
+source that doesn't parse fails the command instead of writing garbage, and the
 error carries the template name and offending line.
 
-`go/format` does not add or remove imports. `golang.org/x/tools/imports` would,
-and it would be gopher's first dependency. Instead templates carry complete
-import blocks, and generators expose `-import` where output can reference
-arbitrary types.
+`go/format` doesn't add or remove imports. `golang.org/x/tools/imports` would,
+and it would be gopher's first third-party dependency. Instead templates carry
+complete import blocks, and generators expose `-import` where output can
+reference arbitrary types.
 
 **This is the standing escape hatch:** if import inference ever becomes
 necessary, `x/tools` is the answer and the zero-dependency property is the
@@ -104,8 +104,8 @@ price. Make that call deliberately.
 
 `GOPHER_UPDATE_GOLDEN=1 go test ./...`.
 
-The conventional `-update` flag fails in every package that does not define it,
-so `go test ./... -update` cannot do a repo-wide refresh — which is exactly what
+The conventional `-update` flag fails in every package that doesn't define it,
+so `go test ./... -update` can't do a repo-wide refresh, which is exactly what
 you want after a template change.
 
 ## `ModeAppend` for ports
@@ -118,7 +118,7 @@ parses both sides, unions the imports with stdlib grouped first, and appends.
 `spec.md` is explicit that ports live in `core.go`/`primary.go`/`secondary.go`.
 
 **Rejected:** string-matching `type X interface {` to detect duplicates. Parsing
-is barely more code and is not fooled by comments or formatting.
+is barely more code and isn't fooled by comments or formatting.
 
 ## `ModeEnsure` for the http companions
 
@@ -128,8 +128,8 @@ them.
 
 They sit at fixed paths independent of `-name`, which rules out both existing
 modes. `ModeCreate` would fail the no-clobber check on a second http adapter.
-`ModeAppend` is worse: its duplicate check keys on `data.Name.Pascal` — the
-*adapter's* name, not `Request` — so it would never match and would append
+`ModeAppend` is worse: its duplicate check keys on `data.Name.Pascal` (the
+*adapter's* name, not `Request`), so it would never match and would append
 duplicate types on every run.
 
 `ModeEnsure` is the right primitive for scaffolding the caller then edits: write
@@ -145,7 +145,7 @@ string:
 ```
 
 **Rejected:** a `When` or `Condition` field on `TemplateRef`. `Out` is already a
-template, so the capability was free — a new field would have been a second way
+template, so the capability was free. A new field would have been a second way
 to express the same thing.
 
 ## Module resolution follows `-out`
@@ -159,7 +159,7 @@ module must describe the tree being written to, not the shell's location.
 
 ## No `service` type
 
-`spec.md` lists `service`, but the hexagonal layout has no service layer —
+`spec.md` lists `service`, but the hexagonal layout has no service layer:
 domains are already the orchestrators. A second concept for the same role would
 only invite drift, so `GenService` was removed rather than left as an unused
 enum value.
@@ -170,7 +170,7 @@ enum value.
 `infra/` as its own module.
 
 The nested `go.mod` means the parent module's `go build ./...` skips it, which is
-what you want — the CDK dependency tree stays out of the application's.
+what you want: the CDK dependency tree stays out of the application's.
 
 ## Formatting is skipped for non-Go output
 
@@ -195,7 +195,7 @@ Everything else became a function. The lookup tables backing `String()` and
 to inject a table. `AdapterKinds` and friends return a fresh slice per call
 rather than exposing a mutable exported one. `specs` became per-type
 constructors behind `specFor`, so each `Registry` builds its own
-`*entity.GenSpec` pointers — previously every registry shared one backing
+`*entity.GenSpec` pointers. Previously every registry shared one backing
 array, and a write through `Registry.Spec()` would have leaked into every other
 registry in the process.
 
@@ -204,14 +204,14 @@ written." True today, but the guarantee costs nothing to make structural, and a
 `switch` is faster and allocates nothing.
 
 The `cli.go` globals were the concrete motivation. The global flag table was read
-by position — `globals[0].Usage` beside a hardcoded `"out"` — so reordering the
-slice would have silently attached the wrong help text to a flag. It is now a
+by position (`globals[0].Usage` beside a hardcoded `"out"`), so reordering the
+slice would have silently attached the wrong help text to a flag. It's now a
 `CliAdapter` field keyed by name through `usageFor`, with the flag names as
 constants, and `cli_test.go` asserts each flag is followed by its own usage.
 
 ## Strings that carry meaning are constants
 
-A string is named when it crosses a boundary the compiler does not check. Four
+A string is named when it crosses a boundary the compiler doesn't check. Four
 of those existed:
 
 - **Flag names.** `registry.go` declares `FlagSpec{Name: ...}`; `templateData`
@@ -223,7 +223,7 @@ of those existed:
   `entity.GenSpec.Flag` to read the real default rather than trusting the
   constant.
 - **`"true"` / `"false"`.** A bool flag travels as a string so `Flags` can stay
-  one map, which made the spelling a protocol between five sites. It is
+  one map, which made the spelling a protocol between five sites. It's now
   `entity.BoolTrue` / `entity.BoolFalse`, declared next to `Request.Bool`.
 - **CLI flag names.** `cli.go` had a const block for the global flags and then
   spelled `"json"` out four more times for the inspection commands.
@@ -232,8 +232,8 @@ of those existed:
 
 - **Anything inside a template string.** `` Out: `{{if eq .Flags.gomod "true"}}go.mod{{end}}` ``
   is `text/template` source, not a Go value. Substituting a constant means
-  concatenation, which costs readability and buys nothing — the template engine
-  never sees the Go identifier.
+  concatenation, which costs readability and buys nothing, because the template
+  engine never sees the Go identifier.
 - **Single-use data in the spec table.** `Out:` paths, template names, package
   defaults, usage prose. A constant referenced once is indirection, not safety;
   the declaration reads better spelled out.
@@ -253,22 +253,22 @@ without building a `text/template` at all.
 
 A `TemplateRef` carries its name and its output path as templates, so `render`
 makes three renderer calls per ref and only the third is a template file. Nearly
-all of the other two are literal strings — 28 of the registry's 31 `Name` values
+all of the other two are literal strings: 28 of the registry's 31 `Name` values
 contain no action, and `setup` alone renders 14 static names and 9 static paths.
 Each was paying a `template.New`, a `Funcs` copy of the whole func map with a
 `reflect.ValueOf` per entry, an `Option` string parse, a copy of the source, and
-a full lex and parse, to hand back a constant. That is 21 ns instead of 2.0 µs
+a full lex and parse, to hand back a constant. That's 21 ns instead of 2.0 µs
 per call, and a quarter of what `gopher generate setup` cost.
 
-It is safe because the renderer never calls `Delims`, so `{{` is the only
+It's safe because the renderer never calls `Delims`, so `{{` is the only
 sequence that can open an action, `}}` outside one is literal text, and
-`missingkey=error` cannot fire where there are no keys. `BenchmarkTemplateRender`
+`missingkey=error` can't fire where there are no keys. `BenchmarkTemplateRender`
 carries a `static` case so the two paths stay visible against each other.
 
 **Not a template cache.** Caching parsed templates is the obvious next idea and
 it is rejected in [testing.md](testing.md): within one invocation every template
 string is distinct, so the hit rate is ~0% in the run a user gets and ~100% in a
-benchmark that reuses a generator. This is the opposite shape — it removes work
+benchmark that reuses a generator. This is the opposite shape: it removes work
 rather than remembering it, so it shows up in `BenchmarkGenerateCold`.
 
 ## Override directories are resolved once per process
@@ -284,18 +284,18 @@ times. The lookup went from 3.3 µs to 231 ns, which is what the embedded read
 alone costs.
 
 Only directories that are definitively missing are dropped, so a path that
-exists but is not a directory still fails at the first `Load` exactly as before.
-Deciding existence once assumes a directory does not appear mid run, which holds
+exists but isn't a directory still fails at the first `Load` exactly as before.
+Deciding existence once assumes a directory doesn't appear mid run, which holds
 because gopher is one short lived process per invocation. `walkDir` already
 guarded itself this way; this extends the same assumption to the read path.
 
 `FsAdapter.Write` skips `MkdirAll` for a directory it already created, on the
-same reasoning and with the same limit: the state is per adapter and is not safe
+same reasoning and with the same limit: the state is per adapter and isn't safe
 to share across goroutines.
 
-**Rejected:** growing the render buffer to the source length up front. It is
-worth 6% on the largest template in isolation and nothing end to end — 1.5% on
-`BenchmarkGenerateCold/setup`, inside the noise floor — because formatting, not
+**Rejected:** growing the render buffer to the source length up front. It's
+worth 6% on the largest template in isolation and nothing end to end (1.5% on
+`BenchmarkGenerateCold/setup`, inside the noise floor), because formatting, not
 execution, is what a generate spends its time on. It also over-allocates for
 small templates whose output is shorter than their source.
 
@@ -313,9 +313,9 @@ identical to the serial loop it replaced:
   not goroutine-safe on purpose.
 - **Fewer than two create refs takes the serial path.** `entity`, every
   `adapter` kind, and `port` stay byte-for-byte on the old loop, so the floor
-  cases pay no goroutine overhead — and a single-file `adapter` generate could
-  not benefit anyway, since one `format.Source` over one big file is its whole
-  cost and cannot be split.
+  cases pay no goroutine overhead. A single-file `adapter` generate couldn't
+  benefit anyway, since one `format.Source` over one big file is its whole
+  cost and can't be split.
 - **The lowest-index error wins.** The serial loop stopped at the first
   failing ref, so scanning the collected errors in declaration order
   reproduces the same error no matter which worker finished first. Refs after
@@ -330,12 +330,12 @@ identical to the serial loop it replaced:
   not be mistaken for one a flag switched off. `renderAll` counts deliveries
   and returns `ctx.Err()` on a shortfall.
 
-**Rejected:** fanning the write loop as well — the report order is part of the
+**Rejected:** fanning the write loop as well: the report order is part of the
 interface, the `MkdirAll` memo is a plain map, and writes are a fraction of
 render cost.
 
 **Rejected, measured:** a fan as wide as the machine. `min(GOMAXPROCS, refs)`
-— ten workers on an M2 Pro — made `BenchmarkGenerateCold/setup` 9.7% *slower*
+(ten workers on an M2 Pro) made `BenchmarkGenerateCold/setup` 9.7% *slower*
 than the serial loop (213µs → 234µs), and its profile was 81% scheduler
 wakeups (`usleep`, `pthread_cond_wait/signal`, `stealWork`) at 347% CPU. The
 refs are 5–70µs of work each; waking a parked thread costs about as much as
@@ -347,29 +347,29 @@ so `MaxRenderFan = 3` reaches that bound: 159µs against 174µs at two workers,
 ## Specs are built one type at a time
 
 A real invocation resolves exactly one spec, but every process built all
-eleven — about 5.6KB and a fifth of `BenchmarkGenerateCold/entity`'s
+eleven: about 5.6KB and a fifth of `BenchmarkGenerateCold/entity`'s
 allocations spent on specs nobody asked for. `Registry.Spec` now builds the
 requested type through `specFor` on first use and caches the pointer per
 registry; `Specs()` materializes the full table in `genTypes` order through
 the same cache, so `list` and `describe` see the same order and the same
 pointers as before. `WithSpecs` bypasses laziness entirely, which keeps every
 fake-spec test on the old resolve-against-a-slice path. The registry stays
-single-goroutine — rendering fans out, spec resolution never does — so the
+single-goroutine (rendering fans out, spec resolution never does), so the
 cache needs no lock.
 
 The four `-kind`/`-side` usage strings that were joined from the kind lists on
 every construction are now compile-time consts, with
-`TestKindUsageStringsMatchKinds` pinning each to its list so a new kind cannot
+`TestKindUsageStringsMatchKinds` pinning each to its list so a new kind can't
 be advertised in one place and not the other.
 
-**Cost accepted:** adding a type is now three touchpoints in `registry.go` —
-constructor, `specFor` case, `genTypes` entry — instead of one slice entry.
+**Cost accepted:** adding a type is now three touchpoints in `registry.go`
+(constructor, `specFor` case, `genTypes` entry) instead of one slice entry.
 `TestSpecsCanonicalOrder` fails loudly when they drift.
 
 ## Commands wire only what they use
 
-`run()` used to build the entire hexagon — config load and go.mod read, three
-store stats, the renderer's FuncMap, generator, catalog — before looking at
+`run()` used to build the entire hexagon (config load and go.mod read, three
+store stats, the renderer's FuncMap, generator, catalog) before looking at
 `args[0]`, so `gopher version` paid for all of it and a malformed config file
 broke every command including `help`. Dispatch now happens first: `version`,
 `list`, `describe`, `help`, and usage errors get a cli wired with only the
@@ -378,7 +378,7 @@ catalog, and only `generate` builds everything.
 `TestRunFastPathsNeedOnlyRegistry` drives every fast path against those nils,
 so a future edit that reaches for one panics in the test, not in a terminal.
 Deliberate behavior change riding along: a broken config no longer fails
-`version`/`list`/`describe`/`help` — they never read it.
+`version`/`list`/`describe`/`help`, because they never read it.
 
 Smaller cuts in the same pass: `parseModule` walks the go.mod bytes instead of
 copying the file into a string; the user config dir is resolved once per
@@ -386,7 +386,7 @@ copying the file into a string; the user config dir is resolved once per
 request through one binding slice instead of three pointer maps materialized
 twice; and `report` buffers a multi-artifact run into one write syscall.
 Buffering unconditionally was tried first and backed out: a single-artifact
-generate — the common case — paid a 4KB buffer (+18% on
+generate, the common case, paid a 4KB buffer (+18% on
 `BenchmarkCliRun/generate_full`) to batch one line, so the buffer is gated on
 having more than one artifact to print.
 
@@ -416,7 +416,7 @@ to `string` looks like a free copy removed. Analyzed and rejected on paper:
 it saves one copy on the parse path only (~1–2µs of the 780µs aws generate,
 2–3% of alloc space), while the override path still copies (`os.ReadFile` to
 string), the action-free fast path still copies into `Artifact.Content`, and
-execution buffer growth — the actual allocation cost of rendering — is
+execution buffer growth, the actual allocation cost of rendering, is
 untouched. Inside the noise floor on every Cold label, priced at a signature
 ripple across two ports, the store, the renderer, the fakes, and every
 adapter test.
@@ -428,7 +428,7 @@ The idea: `Funcs(a.funcs)` re-registers eight functions through
 the constructor and `Clone()` it per render instead. Measured on
 `BenchmarkTemplateRender` with `-count 10`: the small ref templates gained
 3–4.7%, the large bodies were flat to 1.8% *worse*, and every parsing label
-gained an allocation (+1.5% B/op on the refs) — `Clone` copies both func maps
+gained an allocation (+1.5% B/op on the refs). `Clone` copies both func maps,
 and its bookkeeping costs more than the reflection it avoids. Under the 10%
 pre-gate it never reached a full-suite run. Closed; the shared-prototype
 variant without Clone is off the table permanently because parsing into a

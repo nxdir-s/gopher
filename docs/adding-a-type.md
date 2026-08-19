@@ -5,8 +5,8 @@ Two walkthroughs, because the two common changes are very different sizes.
 The invariant behind both: **the registry is the single source of truth.** One
 `entity.GenSpec` in `internal/core/domain/registry.go` drives CLI flag
 registration, the `describe` output, and template selection. If a change here
-makes you edit `internal/adapters/cli.go`, stop — the abstraction is being
-worked around.
+makes you edit `internal/adapters/cli.go`, stop: you're working around the
+abstraction.
 
 ---
 
@@ -15,8 +15,8 @@ worked around.
 Say `redis`. Four steps.
 
 **1. Write the template.** `templates/files/adapter/redis.tmpl`, following the
-conventions in [templates.md](templates.md) — custom error structs, functional
-options, nil-client guards:
+conventions in [templates.md](templates.md) (custom error structs, functional
+options, nil-client guards):
 
 ```
 package {{.Package}}
@@ -45,7 +45,7 @@ the new kind.
 
 **3. Add a golden case.** The golden test in
 `internal/core/domain/golden_test.go` already loops over `AdapterKinds()`, so
-there is nothing to write — just generate the file:
+there's nothing to write. Just generate the file:
 
 ```bash
 GOPHER_UPDATE_GOLDEN=1 go test ./internal/core/domain/
@@ -70,22 +70,22 @@ Say `middleware`, emitting `internal/adapters/middleware/<name>.go`.
 
 ### 1. Add the `GenType`
 
-`internal/core/valobj/gentype.go` — a constant, a `genTypeNames` entry, and an
-alias if the type has an obvious second name:
+In `internal/core/valobj/gentype.go`, add a constant, a `genTypeNames` entry,
+and an alias if the type has an obvious second name:
 
 ```go
 GenMiddleware               // in the iota block
 GenMiddleware: "middleware" // in genTypeNames
 ```
 
-**Append new constants at the end of the iota block.** The values are not
+**Append new constants at the end of the iota block.** The values aren't
 persisted anywhere, but reordering churns every switch and map in one commit for
 no reason.
 
 ### 2. Add the spec
 
 In `internal/core/domain/registry.go`: a constructor beside the other `spec*`
-functions, a case in `specFor`, and an entry in `genTypes` — its position sets
+functions, a case in `specFor`, and an entry in `genTypes`, whose position sets
 where `list` and `describe` show the type. `TestSpecsCanonicalOrder` fails if
 the case or the entry is missing. Every field:
 
@@ -130,13 +130,12 @@ func specMiddleware() *entity.GenSpec {
 ```
 
 Both `Name` and `Out` are rendered as templates first, so either can branch on a
-flag. An `Out` that renders empty drops the artifact — that is how optional
-files work. See [pipeline.md](pipeline.md).
+flag. An `Out` that renders empty drops the artifact; that's how optional files
+work. See [pipeline.md](pipeline.md).
 
 Name a flag with a constant from `internal/core/domain/flags.go` rather than a
-literal — `generator.go` reads several of them back by name, and the constant is
-what keeps the two sides spelling it the same way. Add one there if the flag is
-new.
+literal: `generator.go` reads several of them back by name, and the constant
+keeps the two sides spelling it the same way. Add one there if the flag is new.
 
 Flag names may not collide with the globals (`OutFlag`, `ModuleFlag`,
 `ForceFlag`, `DryRunFlag`, `StdoutFlag` in `internal/adapters/cli.go`); the CLI
@@ -145,7 +144,7 @@ rejects that at runtime with `ErrDuplicateFlag`.
 ### 3. Write the template
 
 `templates/files/middleware/handler.tmpl`. Namespace the directory by type so
-`gopher templates list` stays readable and names cannot collide with an existing
+`gopher templates list` stays readable and names can't collide with an existing
 kind lookup.
 
 ### 4. Add a golden case
@@ -165,9 +164,9 @@ In `TestGoldenTemplates` in `internal/core/domain/golden_test.go`, append to the
 ```
 
 The loop stamps `Module` and `Stdout` on every entry, so leave those out. If the
-output embeds `GoVersion`, generate that case with the `go.mod` switched off —
-the directive tracks the local toolchain and would make the golden fail on a
-different Go version.
+output embeds `GoVersion`, generate that case with the `go.mod` switched off,
+because the directive tracks the local toolchain and would make the golden fail
+on a different Go version.
 
 ### 5. Add a compile check if you can
 
@@ -214,8 +213,8 @@ unique type per spec, non-empty summary, at least one template ref, complete
 `Name`/`Out` on each ref, unique flag names, and that a bool flag's default is
 literally `"true"` or `"false"`.
 
-**A required flag with a default.** Also caught by `TestRegistryIsWellFormed` —
-the two are contradictory, and the CLI would silently satisfy the requirement
+**A required flag with a default.** Also caught by `TestRegistryIsWellFormed`.
+The two are contradictory, and the CLI would silently satisfy the requirement
 with the default.
 
 **Reaching for `ModeAppend` when you want `ModeEnsure`.** Append's idempotency
@@ -224,13 +223,13 @@ are *not* named after `-name`, it will never match and every run appends
 duplicates. Fixed-path scaffolding wants `ModeEnsure`. See [pipeline.md](pipeline.md).
 
 **Forgetting to refresh goldens**, or refreshing without reading the diff. The
-diff is the review — an unexpected change means a template changed behavior.
+diff is the review: an unexpected change means a template changed behavior.
 
 **Indexing a flag the spec does not declare.** `missingkey=error` turns
-`.Flags.nope` into a failed command. Declare it or do not read it.
+`.Flags.nope` into a failed command. Declare it or don't read it.
 
-**Assuming imports are inferred.** They are not; see [templates.md](templates.md).
+**Assuming imports are inferred.** They aren't; see [templates.md](templates.md).
 
 **Editing `cli.go` to make a type work.** The registry drives flag registration.
-`cli.go` changes only when adding a top-level *command* — a sibling of
-`generate`, `list`, `describe`, `templates`.
+`cli.go` changes only when adding a top-level *command* (a sibling of
+`generate`, `list`, `describe`, `templates`).
